@@ -1,0 +1,14 @@
+<Machine type="QtDragon">
+    <Utils>
+        <facing install="yes" />
+        <hole_circle install="yes" />
+        <auto_measure install="yes" />
+        <ngcgui install="yes" />
+        <zlevel install="yes" />
+        <spindle_warmup install="yes" />
+        <hole_enlarge install="yes" />
+        <gcodes install="yes" />
+        <rapid_rotary install="yes" />
+        <document_viewer install="yes" />
+    </Utils>
+</Machine>
