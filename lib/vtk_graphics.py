@@ -83,7 +83,7 @@ class VTKCanon(StatCanon):
         self.path_actors = OrderedDict()
         self.path_points = OrderedDict()
         self.origin = 540
-        self.path_actors[self.origin] = PathActor()
+#        self.path_actors[self.origin] = PathActor()
         self.path_points[self.origin] = list()
         self.previous_origin = self.origin
         self.ignore_next = False  # hacky way to ignore the second point next to a offset change
@@ -597,14 +597,6 @@ class VTKGraphics(QVTKRenderWindowInteractor, StatCanon):
 
     def update_g5x_index(self, index):
         self.g5x_index = int(index)
-#        position = STATUS.stat.g5x_offset
-#        position = self.g5x_offset
-#        transform = vtk.vtkTransform()
-#        transform.Translate(*position[:3])
-#        transform.RotateWXYZ(*position[5:9])
-#        self.axes_actor.SetUserTransform(transform)
-#        self.interactor.ReInitialize()
-#        self.update_render()
 
     def update_g92_offset(self):
         if STATUS.is_mdi_mode() or STATUS.is_auto_mode():
@@ -902,7 +894,7 @@ class VTKGraphics(QVTKRenderWindowInteractor, StatCanon):
             props[axis] = f'{min_ext[i]:{fmt}} to {max_ext[i]:{fmt}} = {(max_ext[i] - min_ext[i]):{fmt}} {units}'
             props[axis + '_zero_rxy'] = f'{min_rxy[i]:{fmt}} to {max_rxy[i]:{fmt}} = {(max_rxy[i] - min_rxy[i]):{fmt}} {units}'
         props['machine_unit_sys'] = 'Metric' if self.units == 'mm' else 'Imperial'
-        props['gcode_units'] = 'Metric' if units == 'mm' else 'Imperial'
+        props['gcode_units'] = units
         self.gcode_properties = props
         STATUS.emit('graphics-gcode-properties', self.gcode_properties)
 
@@ -1227,17 +1219,3 @@ class Tool:
 
     def get_actor(self):
         return self.actor
-
-
-if __name__ == "__main__":
-    import sys
-    from PyQt5 import QtWidgets
-    app = QtWidgets.QApplication(sys.argv)
-    if len(sys.argv) == 2:
-        INI_FILE = "/home/jim/linuxcnc/configs/vtk_dragon/qtdragon_xyyza.ini"
-        NGC_FILE = os.path.join('/home/jim/linuxcnc/nc_files', sys.argv[1])
-        vtk = VTKGraphics()
-        vtk.load_program(NGC_FILE)
-    else:
-        print('No ngc file specified')
-    sys.exit( app.exec_() )
