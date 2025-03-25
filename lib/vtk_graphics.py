@@ -14,7 +14,6 @@ vtk.qt.QVTKRWIBase = "QGLWidget"
 # Fix end
 
 from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
-from vtk.util.colors import tomato, yellow, mint
 from qtvcp.core import Info, Status, Tool
 try:
     from .base_canon import BaseCanon
@@ -35,6 +34,7 @@ COLOR_MAP = {
     'traverse':    (76, 128, 128, 85),
     'arcfeed':     (255, 255, 255, 128),
     'feed':        (255, 255, 255, 128),
+    'path':        (1.0, 1.0, 0.0),
     'dwell':       (255, 128, 128, 128),
     'limits':      (1.0, 0.0, 0.0),
     'label_ok':    (0.86, 0.54, 0.86),
@@ -1099,6 +1099,7 @@ class PathBoundaries:
 
 class PathCache:
     def __init__(self, current_position):
+        self.colors = COLOR_MAP
         self.current_position = current_position
         self.index = 0
         self.num_points = 2
@@ -1110,7 +1111,7 @@ class PathCache:
         self.lines_polygon_data = vtk.vtkPolyData()
         self.polygon_mapper = vtk.vtkPolyDataMapper()
         self.actor = vtk.vtkActor()
-        self.actor.GetProperty().SetColor(yellow)
+        self.actor.GetProperty().SetColor(self.colors['path'])
         self.actor.GetProperty().SetLineWidth(2)
         self.actor.GetProperty().SetOpacity(0.6)
         self.actor.SetMapper(self.polygon_mapper)
