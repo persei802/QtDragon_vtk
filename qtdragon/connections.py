@@ -29,7 +29,7 @@ class Connections():
         self.w.btn_goto_zero.clicked.connect(self.parent.btn_goto_location_clicked)
         self.w.btn_rewind_a.clicked.connect(self.parent.btn_rewind_clicked)
         self.w.btn_go_home.clicked.connect(self.parent.btn_goto_location_clicked)
-        self.w.btn_mdi_clear.pressed.connect(lambda: self.w.mdihistory.MDILine.clear())
+        self.w.btn_mdi_clear.pressed.connect(self.parent.mdi_clear_pressed)
         self.w.btn_mdi_enter.pressed.connect(self.parent.mdi_enter_pressed)
         # tool frame buttons
         self.w.btn_goto_sensor.clicked.connect(self.parent.btn_goto_location_clicked)
@@ -45,7 +45,6 @@ class Connections():
         self.w.btn_edit_gcode.clicked.connect(lambda state: self.parent.edit_gcode_changed(state))
         # checkboxes
         self.w.chk_run_from_line.stateChanged.connect(lambda state: self.parent.chk_run_from_line_changed(state))
-#        self.w.chk_inhibit_selection.stateChanged.connect(lambda state: self.w.gcodegraphics.set_inhibit_selection(state))
         self.w.chk_use_mpg.stateChanged.connect(lambda state: self.parent.use_mpg_changed(state))
         self.w.chk_override_limits.stateChanged.connect(lambda state: self.parent.override_limits_changed(state))
         self.w.chk_use_camera.stateChanged.connect(lambda state: self.parent.use_camera_changed(state))
@@ -67,4 +66,3 @@ class Connections():
         self.w.lineEdit_max_power.editingFinished.connect(self.parent.max_power_edited)
         # misc
         self.w.gcode_viewer.percentDone.connect(lambda percent: self.parent.percent_done_changed(percent))
-#        self.w.gcodegraphics.percentLoaded.connect(lambda percent: self.parent.percent_loaded_changed(percent))
