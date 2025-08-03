@@ -13,10 +13,12 @@
 import sys
 import os
 import re
+import importlib
 import xml.etree.ElementTree as ET
 
-from PyQt5 import QtCore, QtWidgets, QtGui
-from PyQt5.QtWidgets import QPushButton, QStackedWidget, QDialog, QDialogButtonBox, QVBoxLayout, QHBoxLayout, QSizePolicy
+from PyQt5.QtGui  import QFont
+from PyQt5.QtCore import QObject, Qt, QUrl
+from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QTabWidget, QPlainTextEdit
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWebEngineWidgets import QWebEnginePage
 
@@ -33,7 +35,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # status message alert levels
 DEFAULT =  0
 WARNING =  1
-CRITICAL = 2
+ERROR = 2
 
 # this class provides an overloaded function to disable navigation links
 class WebPage(QWebEnginePage):
@@ -42,12 +44,12 @@ class WebPage(QWebEnginePage):
         return super().acceptNavigationRequest(url, navtype, mainframe)
 
 
-class ShowHelp(QtCore.QObject):
+class ShowHelp(QObject):
     def __init__(self, dialog):
         super(ShowHelp, self).__init__()
         layout = QVBoxLayout(dialog)
         dialog.setWindowTitle('Utility Help')
-        dialog.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
+        dialog.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.webview = QWebEngineView()
         bbox = QDialogButtonBox()
         bbox.addButton(QDialogButtonBox.Ok)
@@ -63,127 +65,84 @@ class Setup_Utils():
     def __init__(self, widgets, parent):
         self.w = widgets
         self.parent = parent
-        self.tool_db = self.parent.tool_db
+        if self.parent is not None:
+            self.tool_db = self.parent.tool_db
+        self.installed_modules = list()
+        self.zlevel = None
         self.doc_index = 0
-        self.util_btns = []
-        self.num_utils = 0
-        self.max_util_btns = 8
-        self.btn_idx = 0
-        self.scroll_window = {'left': 0, 'right': 0}
-        self.sizePolicy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        self.stackedWidget_utils = QStackedWidget()
-        self.stackedWidget_utils.setSizePolicy(self.sizePolicy)
-        self.w.layout_utils.addWidget(self.stackedWidget_utils)
-        self.view_mode = False
-        self.enlarge = None
         # setup XML parser
         xml_filename = os.path.join(HERE, 'utils.xml')
         self.tree = ET.parse(xml_filename)
         self.root = self.tree.getroot()
-        self.machine = self.root.get('type')
         # setup help file viewer
         self.dialog = QDialog()
         self.help_page = ShowHelp(self.dialog)
         self.dialog.hide()
 
+    def closing_cleanup__(self):
+        for mod in self.installed_modules:
+            if 'closing_cleanup__' in dir(mod):
+                mod.closing_cleanup__()
+
     def init_utils(self):
-        xml = self.root.find('Utils')
-        for child in xml:
-            install = child.get('install')
-            if install == 'yes':
-                cmd = 'install_' + child.tag
-                if cmd in dir(self):
-                    self[cmd]()
-                    LOG.debug(f"Installed {child.tag} utility")
-                else:
-                    LOG.debug(f"No such utility as {child.tag}")
-
-        self.num_utils = len(self.util_btns)
-        self['btn_' + self.util_btns[0]].setChecked(True)
-        self.scroll_window['left'] = 0
-        self.scroll_window['right'] = self.max_util_btns - 1
-
-        if self.num_utils <= self.max_util_btns:
-            self.w.btn_util_left.hide()
-            self.w.btn_util_right.hide()
-        else:
-            self.slide_scroll_window()
-        self.w.util_buttonGroup.buttonClicked.connect(self.utils_tab_changed)
+        # install optional utilities
+        utils = self.root.findall("util")
+        for util in utils:
+            mod_name = util.find("module").text
+            class_name = util.find("class").text 
+            item_text = util.find("name").text
+            self.install_module(mod_name, class_name, item_text)
+        # check if Z level compenstation was installed
+        if self.zlevel is not None:
+            self.parent.zlevel = self.zlevel
+        # install permanent utilities
+        self.install_rapid_rotary()
+        self.install_document_viewer()
+        self.install_gcodes()
         self.show_defaults()
 
-    def install_facing(self):
-        from lib.facing import Facing
-        self.facing = Facing(self.tool_db, self.parent, self)
-        self.stackedWidget_utils.addWidget(self.facing)
-        self.make_button('facing', 'FACING')
-        self.facing._hal_init()
-
-    def install_hole_circle(self):
-        from lib.hole_circle import Hole_Circle
-        self.hole_circle = Hole_Circle(self.parent, self)
-        self.stackedWidget_utils.addWidget(self.hole_circle)
-        self.make_button('hole_circle', 'HOLE\nCIRCLE')
-        self.hole_circle._hal_init()
-
-    def install_auto_measure(self):
-        from lib.auto_height import Auto_Measure
-        self.auto_measure = Auto_Measure(self.w, self.parent, self)
-        self.stackedWidget_utils.addWidget(self.auto_measure)
-        self.make_button('auto_measure', 'WORKPIECE\nHEIGHT')
-        self.auto_measure._hal_init()
-
-    def install_zlevel(self):
-        from lib.zlevel import ZLevel
-        self.zlevel = ZLevel(self.w, self.parent, self)
-        self.parent.zlevel = self.zlevel
-        self.stackedWidget_utils.addWidget(self.zlevel)
-        self.make_button('zlevel', 'Z LEVEL\nCOMP')
-        self.zlevel._hal_init()
-
-    def install_spindle_warmup(self):
-        from lib.spindle_warmup import Spindle_Warmup
-        self.warmup = Spindle_Warmup(self.parent)
-        self.stackedWidget_utils.addWidget(self.warmup)
-        self.make_button('warmup', 'SPINDLE\nWARMUP')
-        self.warmup._hal_init()
-
-    def install_hole_enlarge(self):
-        from lib.hole_enlarge import Hole_Enlarge
-        self.enlarge = Hole_Enlarge(self.tool_db, self.parent, self)
-        self.stackedWidget_utils.addWidget(self.enlarge)
-        self.make_button('enlarge', 'HOLE\nENLARGE')
-        self.enlarge._hal_init()
-
-    def install_ngcgui(self):
-        LOG.info("Using NGCGUI utility")
-        from lib.ngcgui import NgcGui
-        self.ngcgui = NgcGui()
-        self.stackedWidget_utils.addWidget(self.ngcgui)
-        self.make_button('ngcgui', 'NGCGUI')
-        self.ngcgui._hal_init()
+    def install_module(self, mod_name, class_name, item):
+        mod_path = 'utils.' + mod_name
+        try:
+            module = importlib.import_module(mod_path)
+            cls = getattr(module, class_name)
+            self[mod_name] = cls(self)
+            self.installed_modules.append(self[mod_name])
+        except FileNotFoundError:
+            print(f'File {mod_name} not found')
+            return
+        except SyntaxError as e:
+            print(f'Syntax error in {mod_name}: {e}')
+            return
+        except ImportError as e:
+            print(f'Import error: {e}')
+            return
+        self.w.stackedWidget_utils.addWidget(self[mod_name])
+        self.w.cmb_utils.addItem(item)
+        self[mod_name]._hal_init()
+        LOG.debug(f"Installed utility: {class_name}")
 
     def install_gcodes(self):
-        from lib.gcodes import GCodes
+        from utils.gcodes import GCodes
         self.gcodes = GCodes()
-        self.stackedWidget_utils.addWidget(self.gcodes)
-        self.make_button('gcodes', 'GCODES')
+        self.w.stackedWidget_utils.addWidget(self.gcodes)
+        self.w.cmb_utils.addItem('GCODES')
         self.gcodes.setup_list()
-        from lib.gcodes import SmartMDI
-        self.smart_mdi = SmartMDI(self.w)
-        self.parent.smart_mdi = self.smart_mdi
-        
+        LOG.debug("Installed utility: GCodes")
+
     def install_rapid_rotary(self):
         if 'A' in INFO.AVAILABLE_AXES:
-            from lib.rapid_rotary import Rapid_Rotary
+            from utils.rapid_rotary import Rapid_Rotary
             self.rapid_rotary = Rapid_Rotary(self)
-            self.stackedWidget_utils.addWidget(self.rapid_rotary)
-            self.make_button('rotary', 'RAPID\nROTARY')
+            self.w.stackedWidget_utils.addWidget(self.rapid_rotary)
+            self.w.cmb_utils.addItem('RAPID ROTARY')
             self.rapid_rotary._hal_init()
+            LOG.debug("Installed utility: Rapid Rotary")
 
     def install_document_viewer(self):
-        self.doc_viewer = QtWidgets.QTabWidget()
-        self.doc_index = self.stackedWidget_utils.addWidget(self.doc_viewer)
-        self.make_button('docs', 'DOCUMENT\nVIEWER')
+        self.doc_viewer = QTabWidget()
+        self.doc_index = self.w.stackedWidget_utils.addWidget(self.doc_viewer)
+        self.w.cmb_utils.addItem('DOCUMENT VIEWER')
         # html page viewer
         self.web_view_setup = QWebEngineView()
         self.web_page_setup = WebPage()
@@ -193,50 +152,38 @@ class Setup_Utils():
         self.PDFView = PDFViewer.PDFView()
         self.doc_viewer.addTab(self.PDFView, 'PDF')
         # gcode properties viewer
-        self.gcode_properties = QtWidgets.QPlainTextEdit()
+        self.gcode_properties = QPlainTextEdit()
         self.gcode_properties.setReadOnly(True)
         # need a monospace font or text won't line up
-        self.gcode_properties.setFont(QtGui.QFont("Courier", 12))
+        self.gcode_properties.setFont(QFont("Courier", 12))
         self.doc_viewer.addTab(self.gcode_properties, 'GCODE')
-
-    def make_button(self, name, title):
-        self['btn_' + name] = QPushButton(title)
-        self['btn_' + name].setSizePolicy(self.sizePolicy)
-        self['btn_' + name].setMinimumSize(QtCore.QSize(90, 0))
-        self['btn_' + name].setCheckable(True)
-        self['btn_' + name].setProperty('index', self.btn_idx)
-        self.w.util_buttonGroup.addButton(self['btn_' + name])
-        self.w.layout_util_btns.insertWidget(self.btn_idx + 1, self['btn_' + name])
-        self.util_btns.append(name)
-        self.btn_idx += 1
+        LOG.debug("Installed utility: Document Viewer")
 
     def show_defaults(self):
         # default html page
         try:
             fname = os.path.join(PATH.CONFIGPATH, 'qtdragon/default_setup.html')
-            url = QtCore.QUrl("file:///" + fname)
+            url = QUrl("file:///" + fname)
             self.web_page_setup.load(url)
         except Exception as e:
-            self.parent.add_status(f"Could not find default HTML file - {e}", CRITICAL)
+            self.parent.add_status(f"Could not find default HTML file - {e}", ERROR)
         # default pdf file
         try:
             fname = os.path.join(PATH.CONFIGPATH, 'qtdragon/default_setup.pdf')
             self.PDFView.loadView(fname)
         except Exception as e:
-            self.parent.add_status(f"Could not find default PDF file - {e}", CRITICAL)
+            self.parent.add_status(f"Could not find default PDF file - {e}", ERROR)
 
     def show_html(self, fname):
-        url = QtCore.QUrl("file:///" + fname)
+        url = QUrl("file:///" + fname)
         self.web_page_setup.load(url)
-        self.stackedWidget_utils.setCurrentIndex(self.doc_index)
+        self.w.stackedWidget_utils.setCurrentIndex(self.doc_index)
         self.doc_viewer.setCurrentIndex(0)
-        self.btn_docs.setChecked(True)
 
     def show_pdf(self, fname):
         self.PDFView.loadView(fname)
-        self.stackedWidget_utils.setCurrentIndex(self.doc_index)
+        self.w.stackedWidget_utils.setCurrentIndex(self.doc_index)
         self.doc_viewer.setCurrentIndex(1)
-        self.btn_docs.setChecked(True)
 
     def show_gcode_properties(self, props):
         lines = props.split('\n')
@@ -264,38 +211,9 @@ class Setup_Utils():
         self.doc_viewer.setCurrentIndex(2)
 
     def show_help_page(self, page):
-        url = QtCore.QUrl("file:///" + page)
+        url = QUrl("file:///" + page)
         self.help_page.load_url(url)
         self.dialog.show()
-
-    def utils_tab_changed(self, btn):
-        if btn == self.w.btn_util_left:
-            self.scroll_left()
-        elif btn == self.w.btn_util_right:
-            self.scroll_right()
-        else:
-            index = btn.property('index')
-            self.stackedWidget_utils.setCurrentIndex(index)
-
-    def scroll_left(self):
-        if self.scroll_window['left'] > 0:
-            self.scroll_window['left'] -= 1
-            self.scroll_window['right'] -= 1
-            self.slide_scroll_window()
-
-    def scroll_right(self):
-        if self.scroll_window['right'] < self.num_utils - 1:
-            self.scroll_window['left'] += 1
-            self.scroll_window['right'] += 1
-            self.slide_scroll_window()
-
-    def slide_scroll_window(self):
-        for item in self.util_btns:
-            index = self['btn_' + item].property('index')
-            if index < self.scroll_window['left'] or index > self.scroll_window['right']:
-                self['btn_' + item].hide()
-            else:
-                self['btn_' + item].show()
 
     # required code for subscriptable objects
     def __getitem__(self, item):
@@ -305,8 +223,8 @@ class Setup_Utils():
         return setattr(self, item, value)
 
 if __name__ == "__main__":
-    app = QtWidgets.QApplication(sys.argv)
-    w = Setup_Utils()
-    w.show()
+    app = PyqQt5.QtWidgets.QApplication(sys.argv)
+    w = Setup_Utils(None, None)
+    w.init_utils()
     sys.exit( app.exec_() )
 

@@ -22,6 +22,7 @@ class BaseCanon(object):
         self.feed = []
         self.traverse = []
         self.dwells = []
+
         # extents
         self.min_extents = [9e99, 9e99, 9e99]
         self.max_extents = [-9e99, -9e99, -9e99]

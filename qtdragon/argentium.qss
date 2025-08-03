@@ -117,17 +117,13 @@ QTreeView {
 }
 
 QListView::item:hover,
-QTreeView::item:hover {
+QTreeView::item:hover,
+QTreeView::item:selected,
+QListView::item:selected {
   border: 1px solid #E0E0E0;
 }
 
 QTreeView::item:pressed {
-  background: qlineargradient(x1: 0.0, y1: 0.0, x2: 0.0, y2: 1.0, stop: 0.0 rgba(128, 128, 128, 100%), stop: 1.0 rgba(224, 224, 224, 100%));
-  color: #101010;
-}
-
-QTreeView::item:selected:active,
-QListView::item:selected:active {
   background: qlineargradient(x1: 0.0, y1: 0.0, x2: 0.0, y2: 1.0, stop: 0.0 rgba(128, 128, 128, 100%), stop: 1.0 rgba(224, 224, 224, 100%));
   color: #101010;
 }
@@ -351,10 +347,13 @@ QComboBox {
   background: qlineargradient(x1: 0.0, y1: 0.0, x2: 0.0, y2: 1.0, stop: 0.0 rgba(96, 96, 96, 100%), stop: 1.0 rgba(32, 32, 32, 100%));
   border: 1px solid black;
   border-radius: 4px;
-  min-width: 100px;
   padding: 1px 0px 1px 8px;
   font: 10pt "Lato Heavy";
   color: #F0F0F0;
+}
+
+QComboBox:hover {
+  border: 1px solid #E0E0E0;
 }
 
 QComboBox::drop-down {
@@ -545,6 +544,45 @@ QLineEdit {
 
 QLineEdit:focus {
   border: 1px solid #00AAFF;
+}
+
+/** SpinBoxes **/
+QSpinBox {
+  background: qlineargradient(x1: 0.0, y1: 0.0, x2: 0.0, y2: 1.0, stop: 0.0 rgba(128, 128, 128, 100%), stop: 1.0 rgba(224, 224, 224, 100%));
+  border: 1px solid black;
+  border-radius: 4px;
+  font: 10pt "Lato Heavy";
+  color: #101010;
+  selection-color: #101010;
+  selection-background-color: transparent;
+}
+
+QSpinBox::up-button {
+  subcontrol-origin: border;
+  subcontrol-position: top right;
+  width: 20px;
+  background-color: transparent;
+  border-left: 1px solid gray;
+}
+
+QSpinBox::down-button {
+  subcontrol-origin: border;
+  subcontrol-position: bottom right;
+  width: 20px;
+  background-color: transparent;
+  border-left: 1px solid gray;
+}
+
+QSpinBox::up-arrow {
+  image: url("qtdragon/style_rc/arrow_up.png");
+  width: 16px;
+  height: 16px;
+}
+
+QSpinBox::down-arrow {
+  image: url("qtdragon/style_rc/arrow_down.png");
+  width: 16px;
+  height: 16px;
 }
 
 /** Checkboxes **/

@@ -266,7 +266,10 @@ FILE</string>
            <string>Z0 DISTANCE FROM ROTARY AXIS</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignCenter</set>
+           <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+          </property>
+          <property name="indent">
+           <number>16</number>
           </property>
          </widget>
         </item>
@@ -280,24 +283,49 @@ FILE</string>
           </property>
           <property name="minimumSize">
            <size>
-            <width>90</width>
+            <width>80</width>
             <height>30</height>
            </size>
           </property>
           <property name="maximumSize">
            <size>
-            <width>90</width>
+            <width>80</width>
             <height>30</height>
            </size>
           </property>
           <property name="toolTip">
-           <string>0.0 means Z0 is centered on Axis A</string>
+           <string>Value is read from SETTINGS -&gt; OFFSETS of main page</string>
           </property>
           <property name="text">
            <string>0.0</string>
           </property>
           <property name="maxLength">
            <number>8</number>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignCenter</set>
+          </property>
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="lbl_z_units">
+          <property name="minimumSize">
+           <size>
+            <width>60</width>
+            <height>30</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>60</width>
+            <height>30</height>
+           </size>
+          </property>
+          <property name="text">
+           <string>MM</string>
           </property>
           <property name="alignment">
            <set>Qt::AlignCenter</set>

@@ -108,17 +108,13 @@ QTreeView {
 }
 
 QListView::item:hover,
-QTreeView::item:hover {
+QTreeView::item:hover,
+QListView::item:selected,
+QTreeView::item:selected {
   border: #727578;
 }
 
 QTreeView::item:pressed {
-  background: #555a5f;
-  color: #eff0f1;
-}
-
-QTreeView::item:selected:active,
-QListView::item:selected:active {
   background: #555a5f;
   color: #eff0f1;
 }
@@ -305,13 +301,16 @@ QTableView#offset_table {
 
 /** Comboboxes **/
 QComboBox {
-  background: #555a5f;
+  background: #31363b;
   border: 1px solid #626568;
   border-radius: 4px;
-  min-width: 100px;
   padding: 1px 0px 1px 8px;
   font: 10pt "Lato Heavy";
   color: #f0f0f0;
+}
+
+QComboBox:hover {
+  border: 1px solid #727578;
 }
 
 QComboBox::drop-down {
@@ -515,6 +514,45 @@ QLineEdit {
 
 QLineEdit:focus {
   color: #727578;
+}
+
+/** SpinBoxes **/
+QSpinBox {
+  background: #1d2023;
+  border: 1px solid #626568;
+  border-radius: 4px;
+  font: 10pt "Lato Heavy";
+  color: #eff0f1;
+  selection-color: #eff0f1;
+  selection-background-color: transparent;
+}
+
+QSpinBox::up-button {
+  subcontrol-origin: border;
+  subcontrol-position: top right;
+  width: 20px;
+  background-color: transparent;
+  border-left: 1px solid gray;
+}
+
+QSpinBox::down-button {
+  subcontrol-origin: border;
+  subcontrol-position: bottom right;
+  width: 20px;
+  background-color: transparent;
+  border-left: 1px solid gray;
+}
+
+QSpinBox::up-arrow {
+  image: url("qtdragon/style_rc/arrow_up.png");
+  width: 16px;
+  height: 16px;
+}
+
+QSpinBox::down-arrow {
+  image: url("qtdragon/style_rc/arrow_down.png");
+  width: 16px;
+  height: 16px;
 }
 
 /** Checkboxes **/
