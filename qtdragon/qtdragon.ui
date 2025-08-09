@@ -1291,7 +1291,7 @@ color: black;</string>
                        <string/>
                       </property>
                       <property name="icon">
-                       <iconset>
+                       <iconset resource="qtdragon.qrc">
                         <normaloff>:/images/images/backspace.png</normaloff>:/images/images/backspace.png</iconset>
                       </property>
                       <property name="iconSize">
@@ -2436,7 +2436,7 @@ color: black;</string>
                        <string/>
                       </property>
                       <property name="icon">
-                       <iconset>
+                       <iconset resource="qtdragon.qrc">
                         <normaloff>:/images/images/arrow_up.png</normaloff>:/images/images/arrow_up.png</iconset>
                       </property>
                       <property name="iconSize">
@@ -2474,7 +2474,7 @@ color: black;</string>
                        <string/>
                       </property>
                       <property name="icon">
-                       <iconset>
+                       <iconset resource="qtdragon.qrc">
                         <normaloff>:/images/images/arrow_down.png</normaloff>:/images/images/arrow_down.png</iconset>
                       </property>
                       <property name="iconSize">
@@ -2512,7 +2512,7 @@ color: black;</string>
                        <string/>
                       </property>
                       <property name="icon">
-                       <iconset>
+                       <iconset resource="qtdragon.qrc">
                         <normaloff>:/images/images/arrow_left.png</normaloff>:/images/images/arrow_left.png</iconset>
                       </property>
                       <property name="iconSize">
@@ -2541,7 +2541,7 @@ color: black;</string>
                        <string/>
                       </property>
                       <property name="icon">
-                       <iconset>
+                       <iconset resource="qtdragon.qrc">
                         <normaloff>:/images/images/arrow_right.png</normaloff>:/images/images/arrow_right.png</iconset>
                       </property>
                       <property name="iconSize">
@@ -2772,7 +2772,7 @@ color: black;</string>
                   <number>0</number>
                  </property>
                  <item>
-                  <layout class="QHBoxLayout" name="layout_preview">
+                  <layout class="QHBoxLayout" name="layout_graphics">
                    <property name="spacing">
                     <number>4</number>
                    </property>
@@ -2782,9 +2782,6 @@ color: black;</string>
                    <property name="rightMargin">
                     <number>0</number>
                    </property>
-                   <item>
-                    <layout class="QVBoxLayout" name="layout_vtk"/>
-                   </item>
                    <item>
                     <widget class="QFrame" name="group1_macro_buttons">
                      <property name="minimumSize">
@@ -3424,13 +3421,13 @@ color: black;</string>
                    <property name="minimumSize">
                     <size>
                      <width>0</width>
-                     <height>0</height>
+                     <height>50</height>
                     </size>
                    </property>
                    <property name="maximumSize">
                     <size>
                      <width>16777215</width>
-                     <height>60</height>
+                     <height>50</height>
                     </size>
                    </property>
                    <layout class="QHBoxLayout" name="horizontalLayout_3">
@@ -3452,7 +3449,7 @@ color: black;</string>
                     <item>
                      <widget class="QPushButton" name="btn_alpha_mode">
                       <property name="sizePolicy">
-                       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                         <horstretch>0</horstretch>
                         <verstretch>0</verstretch>
                        </sizepolicy>
@@ -3460,13 +3457,13 @@ color: black;</string>
                       <property name="minimumSize">
                        <size>
                         <width>0</width>
-                        <height>50</height>
+                        <height>0</height>
                        </size>
                       </property>
                       <property name="maximumSize">
                        <size>
                         <width>16777215</width>
-                        <height>50</height>
+                        <height>16777215</height>
                        </size>
                       </property>
                       <property name="toolTip">
@@ -3484,7 +3481,7 @@ MODE</string>
                     <item>
                      <widget class="QPushButton" name="btn_clear_path">
                       <property name="sizePolicy">
-                       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                         <horstretch>0</horstretch>
                         <verstretch>0</verstretch>
                        </sizepolicy>
@@ -3492,13 +3489,13 @@ MODE</string>
                       <property name="minimumSize">
                        <size>
                         <width>0</width>
-                        <height>50</height>
+                        <height>0</height>
                        </size>
                       </property>
                       <property name="maximumSize">
                        <size>
                         <width>16777215</width>
-                        <height>50</height>
+                        <height>16777215</height>
                        </size>
                       </property>
                       <property name="text">
@@ -3510,7 +3507,7 @@ PATH</string>
                     <item>
                      <widget class="QPushButton" name="btn_zoom_out">
                       <property name="sizePolicy">
-                       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                         <horstretch>0</horstretch>
                         <verstretch>0</verstretch>
                        </sizepolicy>
@@ -3518,13 +3515,13 @@ PATH</string>
                       <property name="minimumSize">
                        <size>
                         <width>0</width>
-                        <height>50</height>
+                        <height>0</height>
                        </size>
                       </property>
                       <property name="maximumSize">
                        <size>
                         <width>16777215</width>
-                        <height>50</height>
+                        <height>16777215</height>
                        </size>
                       </property>
                       <property name="text">
@@ -3536,7 +3533,7 @@ OUT</string>
                     <item>
                      <widget class="QPushButton" name="btn_zoom_in">
                       <property name="sizePolicy">
-                       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                         <horstretch>0</horstretch>
                         <verstretch>0</verstretch>
                        </sizepolicy>
@@ -3544,13 +3541,13 @@ OUT</string>
                       <property name="minimumSize">
                        <size>
                         <width>0</width>
-                        <height>50</height>
+                        <height>0</height>
                        </size>
                       </property>
                       <property name="maximumSize">
                        <size>
                         <width>16777215</width>
-                        <height>50</height>
+                        <height>16777215</height>
                        </size>
                       </property>
                       <property name="text">
@@ -3562,7 +3559,7 @@ IN</string>
                     <item>
                      <widget class="QPushButton" name="btn_dimensions">
                       <property name="sizePolicy">
-                       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                         <horstretch>0</horstretch>
                         <verstretch>0</verstretch>
                        </sizepolicy>
@@ -3570,13 +3567,13 @@ IN</string>
                       <property name="minimumSize">
                        <size>
                         <width>0</width>
-                        <height>50</height>
+                        <height>0</height>
                        </size>
                       </property>
                       <property name="maximumSize">
                        <size>
                         <width>16777215</width>
-                        <height>50</height>
+                        <height>16777215</height>
                        </size>
                       </property>
                       <property name="toolTip">
@@ -3598,9 +3595,9 @@ DIMENSIONS</string>
                      </widget>
                     </item>
                     <item>
-                     <widget class="QPushButton" name="btn_program_bounds">
+                     <widget class="QPushButton" name="btn_bounds">
                       <property name="sizePolicy">
-                       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                         <horstretch>0</horstretch>
                         <verstretch>0</verstretch>
                        </sizepolicy>
@@ -3608,13 +3605,13 @@ DIMENSIONS</string>
                       <property name="minimumSize">
                        <size>
                         <width>0</width>
-                        <height>50</height>
+                        <height>0</height>
                        </size>
                       </property>
                       <property name="maximumSize">
                        <size>
                         <width>16777215</width>
-                        <height>50</height>
+                        <height>16777215</height>
                        </size>
                       </property>
                       <property name="text">
@@ -3629,7 +3626,7 @@ BOUNDS</string>
                     <item>
                      <widget class="QPushButton" name="btn_view_x">
                       <property name="sizePolicy">
-                       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                         <horstretch>0</horstretch>
                         <verstretch>0</verstretch>
                        </sizepolicy>
@@ -3637,13 +3634,13 @@ BOUNDS</string>
                       <property name="minimumSize">
                        <size>
                         <width>0</width>
-                        <height>50</height>
+                        <height>0</height>
                        </size>
                       </property>
                       <property name="maximumSize">
                        <size>
                         <width>16777215</width>
-                        <height>50</height>
+                        <height>16777215</height>
                        </size>
                       </property>
                       <property name="text">
@@ -3653,6 +3650,9 @@ X</string>
                       <property name="checkable">
                        <bool>true</bool>
                       </property>
+                      <property name="checked">
+                       <bool>false</bool>
+                      </property>
                       <property name="autoExclusive">
                        <bool>true</bool>
                       </property>
@@ -3661,22 +3661,10 @@ X</string>
                     <item>
                      <widget class="QPushButton" name="btn_view_y">
                       <property name="sizePolicy">
-                       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                         <horstretch>0</horstretch>
                         <verstretch>0</verstretch>
                        </sizepolicy>
-                      </property>
-                      <property name="minimumSize">
-                       <size>
-                        <width>0</width>
-                        <height>50</height>
-                       </size>
-                      </property>
-                      <property name="maximumSize">
-                       <size>
-                        <width>16777215</width>
-                        <height>50</height>
-                       </size>
                       </property>
                       <property name="text">
                        <string>VIEW
@@ -3693,22 +3681,10 @@ Y</string>
                     <item>
                      <widget class="QPushButton" name="btn_view_z">
                       <property name="sizePolicy">
-                       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                         <horstretch>0</horstretch>
                         <verstretch>0</verstretch>
                        </sizepolicy>
-                      </property>
-                      <property name="minimumSize">
-                       <size>
-                        <width>0</width>
-                        <height>50</height>
-                       </size>
-                      </property>
-                      <property name="maximumSize">
-                       <size>
-                        <width>16777215</width>
-                        <height>50</height>
-                       </size>
                       </property>
                       <property name="text">
                        <string>VIEW
@@ -3725,22 +3701,10 @@ Z</string>
                     <item>
                      <widget class="QPushButton" name="btn_view_p">
                       <property name="sizePolicy">
-                       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                         <horstretch>0</horstretch>
                         <verstretch>0</verstretch>
                        </sizepolicy>
-                      </property>
-                      <property name="minimumSize">
-                       <size>
-                        <width>0</width>
-                        <height>50</height>
-                       </size>
-                      </property>
-                      <property name="maximumSize">
-                       <size>
-                        <width>16777215</width>
-                        <height>50</height>
-                       </size>
                       </property>
                       <property name="text">
                        <string>VIEW
@@ -6845,7 +6809,7 @@ TO FILE</string>
                        <number>2</number>
                       </property>
                       <property name="text">
-                       <string>08:49:36 PM</string>
+                       <string>09:15:33 AM</string>
                       </property>
                       <property name="alignment">
                        <set>Qt::AlignCenter</set>
@@ -16133,13 +16097,13 @@ WCS</string>
   <slot>chk_enable_spindle_changed()</slot>
  </slots>
  <buttongroups>
-  <buttongroup name="page_buttonGroup"/>
-  <buttongroup name="mode_buttonGroup"/>
+  <buttongroup name="mdi_buttonGroup"/>
   <buttongroup name="preset_buttonGroup">
    <property name="exclusive">
     <bool>false</bool>
    </property>
   </buttongroup>
-  <buttongroup name="mdi_buttonGroup"/>
+  <buttongroup name="page_buttonGroup"/>
+  <buttongroup name="mode_buttonGroup"/>
  </buttongroups>
 </ui>

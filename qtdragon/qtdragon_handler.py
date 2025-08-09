@@ -17,7 +17,6 @@ import linuxcnc
 from send2trash import send2trash
 from connections import Connections
 from lib.event_filter import EventFilter
-from lib.vtk_graphics import VTKGraphics
 from PyQt5.QtCore import QObject, QEvent, QSize, QRegExp, QTimer, Qt, QUrl
 from PyQt5.QtGui import QSyntaxHighlighter, QTextCharFormat, QIntValidator, QRegExpValidator, QFont, QColor, QIcon, QPixmap
 from PyQt5.QtWidgets import QWidget, QCheckBox, QLineEdit, QStyle, QDialog, QInputDialog, QMessageBox
@@ -175,6 +174,7 @@ class HandlerClass:
         self.zlevel = None
         self.mdiPanel = None
         # some global variables
+        self.graphics = None
         self.dialog_code = 'CALCULATOR'
         self.kbd_code = 'KEYBOARD'
         self.tool_code = 'TOOLCHOOSER'
@@ -260,7 +260,7 @@ class HandlerClass:
     def initialized__(self):
         self.init_pins()
         self.init_preferences()
-        self.init_vtk()
+        self.init_graphics()
         self.init_tooldb()
         self.init_widgets()
         self.init_file_manager()
@@ -274,6 +274,7 @@ class HandlerClass:
         # initialize widget states
         self.w.stackedWidget_gcode.setCurrentIndex(0)
         self.w.btn_dimensions.setChecked(True)
+        self.show_dimensions(True)
         self.w.page_buttonGroup.buttonClicked.connect(self.main_tab_changed)
         self.w.preset_buttonGroup.buttonClicked.connect(self.preset_jograte)
         self.use_mpg_changed(self.w.chk_use_mpg.isChecked())
@@ -418,23 +419,23 @@ class HandlerClass:
         # check for closing cleanup methods in imported utilities
         self.setup_utils.closing_cleanup__()
 
-    def init_vtk(self):
-        self.vtkgraphics = VTKGraphics(self)
-        self.vtkgraphics.setObjectName("vtkgraphics")
-        self.w.layout_vtk.addWidget(self.vtkgraphics)
-        self.vtkgraphics.setBackgroundColor(QColor(50, 50, 50, 255))
-        self.vtkgraphics.setBackgroundColor2(QColor(10, 10, 10, 255))
-
-        self.w.btn_alpha_mode.clicked.connect(lambda state: self.vtkgraphics.alphaBlend(state))
-        self.w.btn_clear_path.clicked.connect(self.vtkgraphics.clearLivePlot)
-        self.w.btn_zoom_out.clicked.connect(self.vtkgraphics.zoomOut)
-        self.w.btn_zoom_in.clicked.connect(self.vtkgraphics.zoomIn)
-        self.w.btn_dimensions.clicked.connect(lambda state: self.vtkgraphics.showDimensions(state))
-        self.w.btn_program_bounds.clicked.connect(lambda state: self.vtkgraphics.showProgramBounds(state))
-        self.w.btn_view_x.clicked.connect(self.vtkgraphics.setViewX)
-        self.w.btn_view_y.clicked.connect(self.vtkgraphics.setViewY)
-        self.w.btn_view_z.clicked.connect(self.vtkgraphics.setViewZ)
-        self.w.btn_view_p.clicked.connect(self.vtkgraphics.setViewP)
+    def init_graphics(self):
+        from lib.vtk_graphics import VTKGraphics
+        self.graphics = VTKGraphics(self)
+        self.graphics.setObjectName("vtkgraphics")
+        self.w.layout_graphics.insertWidget(0, self.graphics)
+        self.w.chk_inhibit_selection.hide()
+        self.w.btn_bounds.clicked.connect(lambda state: self.graphics.showProgramBounds(state))
+        self.w.btn_alpha_mode.clicked.connect(lambda state: self.graphics.set_alpha_mode(state))
+        self.w.btn_clear_path.pressed.connect(self.graphics.clear_live_plotter)
+        self.w.btn_zoom_in.pressed.connect(self.graphics.zoomin)
+        self.w.btn_zoom_out.pressed.connect(self.graphics.zoomout)
+        self.w.btn_dimensions.clicked.connect(lambda state: self.graphics.showDimensions(state))
+        self.w.btn_view_x.clicked.connect(lambda: self.graphics.setview('x'))
+        self.w.btn_view_y.clicked.connect(lambda: self.graphics.setview('y'))
+        self.w.btn_view_z.clicked.connect(lambda: self.graphics.setview('z'))
+        self.w.btn_view_p.clicked.connect(lambda: self.graphics.setview('p'))
+        self.graphics._hal_init()
 
     def init_widgets(self):
         self.w.main_tab_widget.setCurrentIndex(TAB_MAIN)
@@ -471,7 +472,7 @@ class HandlerClass:
         self.w.offset_table.setShowGrid(False)
         self.w.tooloffsetview.setShowGrid(False)
         # move clock to statusbar
-        self.w.lbl_clock.set_textTemplate(f'VTK_Dragon {VERSION}  <>  %I:%M:%S %p')
+        self.w.lbl_clock.set_textTemplate(f'VtkDragon {VERSION}  <>  %I:%M:%S %p')
         self.w.statusbar.addPermanentWidget(self.w.lbl_clock)
         # set homing buttons to correct joints
         self.w.action_home_x.set_joint(self.jog_from_name['X'])
@@ -1057,9 +1058,12 @@ class HandlerClass:
         self.w.cmb_about.setCurrentIndex(0)
 
     # preview frame
-    def btn_dimensions_changed(self, state):
-        self.w.gcodegraphics.show_extents_option = state
-        self.w.gcodegraphics.clear_live_plotter()
+    def show_dimensions(self, state):
+        if hasattr(self.graphics, 'show_extents_option'):
+            self.graphics.show_extents_option = state
+            self.graphics.clear_live_plotter()
+        else:
+            self.graphics.showDimensions(state)
 
     # gcode frame
     def cmb_gcode_history_activated(self):
