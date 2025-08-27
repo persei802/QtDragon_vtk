@@ -19,9 +19,10 @@ from connections import Connections
 from lib.event_filter import EventFilter
 from PyQt5.QtCore import QObject, QEvent, QSize, QRegExp, QTimer, Qt, QUrl
 from PyQt5.QtGui import QSyntaxHighlighter, QTextCharFormat, QIntValidator, QRegExpValidator, QFont, QColor, QIcon, QPixmap
-from PyQt5.QtWidgets import QWidget, QCheckBox, QLineEdit, QStyle, QDialog, QInputDialog, QMessageBox
+from PyQt5.QtWidgets import (QWidget, QCheckBox, QLineEdit, QStyle, QDialog, QInputDialog, QMessageBox,
+                             QMenu, QAction, QToolButton)
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEnginePage
-from qtvcp.widgets.gcode_editor import GcodeEditor as GCODE
+from qtvcp.widgets.gcode_editor import GcodeEditor, GcodeEditor as GCODE
 from qtvcp.widgets.mdi_history import MDIHistory as MDI_WIDGET
 from qtvcp.widgets.tool_offsetview import ToolOffsetView as TOOL_TABLE
 from qtvcp.widgets.origin_offsetview import OriginOffsetView as OFFSET_VIEW
@@ -52,8 +53,8 @@ TAB_TOOL = 3
 TAB_STATUS = 4
 TAB_PROBE = 5
 TAB_CAMVIEW = 6
-TAB_UTILS = 7
-TAB_SETTINGS = 8
+TAB_SETTINGS = 7
+TAB_UTILS = 8
 TAB_ABOUT = 9
 
 # status message alert levels
@@ -153,6 +154,69 @@ class WebPage(QWebEnginePage):
         return super().acceptNavigationRequest(url, navtype, mainframe)
 
 
+class Gcode_Editor(GcodeEditor):
+    def __init__(self, parent):
+        super(Gcode_Editor, self).__init__()
+        self.parent = parent
+        self.w = self.parent.w
+        self.active_file = None
+        self.editor.setCaretForegroundColor(Qt.yellow)
+        # instance patch the GcodeEditor actions
+        try:
+            self.newAction.triggered.disconnect()
+            self.openAction.triggered.disconnect()
+            self.saveAction.triggered.disconnect()
+            self.exitAction.triggered.disconnect()
+        except TypeError:
+            pass
+        self.newAction.triggered.connect(self.newCall)
+        self.openAction.triggered.connect(lambda: self.openCall(fname=None))
+        self.saveAction.triggered.connect(lambda: self.saveCall(fname=None))
+        self.exitAction.triggered.connect(self.exitCall)
+        # permanently set to editing mode
+        self.editMode()
+
+    def newCall(self):
+        self.active_file = None
+        self.new()
+
+    def openCall(self, fname=None):
+        if self.editor.isModified():
+            result = self.killCheck()
+            if not result: return
+        if fname is None:
+            self.getFileName()
+        else:
+            self.active_file = fname
+            self.editor.load_text(fname)
+            self.label.setText(f'  Editing {fname}')
+            self.parent.add_status(f"Opened gcode file {fname}")
+
+    def saveCall(self, fname=None):
+        if self.active_file is None:
+            self.getSaveFileName()
+        else:
+            saved = ACTION.SAVE_PROGRAM(self.editor.text(), self.active_file)
+            if saved is not None:
+                self.editor.setModified(False)
+                self.parent.add_status(f"Saved gcode file {self.active_file}")
+            
+    def exitCall(self):
+        if self.editor.isModified():
+            result = self.killCheck()
+            if not result: return
+        self.w.stackedWidget_file.setCurrentIndex(0)
+
+    def openReturn(self, fname):
+        self.openCall(fname)
+        self.editor.setModified(False)
+
+    def saveReturn(self, fname):
+        self.active_file = fname
+        saved = ACTION.SAVE_PROGRAM(self.editor.text(), fname)
+        if saved is not None:
+            self.editor.setModified(False)
+
 class HandlerClass:
     def __init__(self, halcomp, widgets, paths):
         self.h = halcomp
@@ -174,7 +238,6 @@ class HandlerClass:
         self.zlevel = None
         self.mdiPanel = None
         # some global variables
-        self.graphics = None
         self.dialog_code = 'CALCULATOR'
         self.kbd_code = 'KEYBOARD'
         self.tool_code = 'TOOLCHOOSER'
@@ -212,7 +275,12 @@ class HandlerClass:
         self.pause_timer = QTimer()
         self.source_file = ''
         self.destination_file = ''
-        self.icon_btns = {'action_exit': 'SP_BrowserStop'}
+        self.icon_btns = {'exit'       : 'SP_BrowserStop',
+                          'cycle_start': 'SP_MediaPlay',
+                          'reload'     : 'SP_BrowserReload',
+                          'step'       : 'SP_ArrowForward',
+                          'pause'      : 'SP_MediaPause',
+                          'stop'       : 'SP_MediaStop'}
 
         self.adj_list = ['maxvel_ovr', 'rapid_ovr', 'feed_ovr', 'spindle_ovr']
 
@@ -263,6 +331,7 @@ class HandlerClass:
         self.init_graphics()
         self.init_tooldb()
         self.init_widgets()
+        self.init_gcode_editor()
         self.init_file_manager()
         self.init_probe()
         self.init_mdi_panel()
@@ -454,25 +523,22 @@ class HandlerClass:
         self.w.lineEdit_max_rpm.setText(f"{self.max_spindle_rpm}")
         self.w.lbl_pgm_color.setStyleSheet(f'Background-color: {STOP_COLOR};')
         # gcode file history
-        self.w.cmb_gcode_history.addItem("No File Loaded")
-        self.w.cmb_gcode_history.view().setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.w.cmb_program_history.view().setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         # gcode editor mode
         self.w.gcode_viewer.readOnlyMode()
         # set calculator mode for menu buttons
         for i in ("x", "y", "z"):
             self.w["axistoolbutton_" + i].set_dialog_code('CALCULATOR')
         # disable mouse wheel events on comboboxes
-        self.w.cmb_gcode_history.wheelEvent = lambda event: None
+        self.w.cmb_program_history.wheelEvent = lambda event: None
         self.w.cmb_icon_select.wheelEvent = lambda event: None
         self.w.jogincrements_linear.wheelEvent = lambda event: None
         self.w.jogincrements_angular.wheelEvent = lambda event: None
-        self.w.cmb_utils.wheelEvent = lambda event: None
-        self.w.cmb_about.wheelEvent = lambda event: None
         # turn off table grids
         self.w.offset_table.setShowGrid(False)
         self.w.tooloffsetview.setShowGrid(False)
         # move clock to statusbar
-        self.w.lbl_clock.set_textTemplate(f'VtkDragon {VERSION}  <>  %I:%M:%S %p')
+        self.w.lbl_clock.set_textTemplate(f'QtDragon {VERSION}  <>  %I:%M:%S %p')
         self.w.statusbar.addPermanentWidget(self.w.lbl_clock)
         # set homing buttons to correct joints
         self.w.action_home_x.set_joint(self.jog_from_name['X'])
@@ -497,10 +563,10 @@ class HandlerClass:
         self.w.jog_xy.set_tooltip('C', 'Toggle FAST / SLOW linear jograte')
         self.w.jog_az.set_tooltip('C', 'Toggle FAST / SLOW angular jograte')
         # apply standard button icons
-        for key in self.icon_btns:
-            style = self.w[key].style()
-            icon = style.standardIcon(getattr(QStyle, self.icon_btns[key]))
-            self.w[key].setIcon(icon)
+        for btn in self.icon_btns:
+            style = self.w[f'btn_{btn}'].style()
+            icon = style.standardIcon(getattr(QStyle, self.icon_btns[btn]))
+            self.w[f'btn_{btn}'].setIcon(icon)
         # populate tool icon combobox
         path = os.path.join(PATH.CONFIGPATH, "tool_icons")
         self.w.cmb_icon_select.addItem('SELECT ICON')
@@ -519,6 +585,10 @@ class HandlerClass:
         # default styles for feedrate and statusbar
         self.feedrate_style = self.w.lbl_feedrate.styleSheet()
         self.statusbar_style = self.w.statusbar.styleSheet()
+
+    def init_gcode_editor(self):
+        self.gcode_editor = Gcode_Editor(self)
+        self.w.layout_gcode_editor.addWidget(self.gcode_editor)
 
     def init_file_manager(self):
         self.w.filemanager_media.table.setShowGrid(False)
@@ -560,11 +630,13 @@ class HandlerClass:
 #            from lib.versa_probe import VersaProbe
             self.probe = VersaProbe()
             self.probe.setObjectName('versaprobe')
+            self.w.btn_probe.setProperty('title', 'VERSA PROBE')
         elif probe == 'basicprobe':
             LOG.info("Using Basic Probe")
             from lib.basic_probe import BasicProbe
             self.probe = BasicProbe(self)
             self.probe.setObjectName('basicprobe')
+            self.w.btn_probe.setProperty('title', 'BASIC PROBE')
         else:
             LOG.info("No valid probe widget specified")
             self.w.btn_probe.hide()
@@ -582,26 +654,38 @@ class HandlerClass:
     def init_utils(self):
         from lib.setup_utils import Setup_Utils
         self.setup_utils = Setup_Utils(self.w, self)
-        self.w.cmb_utils.addItem(' UTILS')
         self.setup_utils.init_utils()
+        self.util_list = self.setup_utils.get_util_list()
+        # designer doesn't allow adding buttons not derived from QAbstractButton class
+        self.w.page_buttonGroup.addButton(self.w.btn_utils)
+        menu = QMenu(self.w.btn_utils)
+        for util in self.util_list:
+            action = QAction(util, self.w.btn_utils)
+            action.triggered.connect(lambda checked, t=util: self.update_utils_button(t))
+            menu.addAction(action)
+        self.w.btn_utils.setMenu(menu)
+        # if z level compensation wasn't installed, disable the button
         if self.zlevel is None:
             self.w.btn_enable_comp.setEnabled(False)
         self.get_next_available()
         self.tool_db.update_tools(self.tool_list)
 
     def init_about(self):
-        self.about_dict = {1: ('vfd', 'USING A VFD'),
-                           2: ('spindle_pause', 'SPINDLE PAUSE'),
-                           3: ('mpg', 'USING A MPG'),
-                           4: ('touchoff', 'TOOL TOUCHOFF'),
-                           5: ('runfromline', 'RUN FROM LINE'),
-                           6: ('stylesheets', 'STYLESHEETS'),
-                           7: ('rotary_axis', 'ROTARY AXIS'),
-                           8: ('custom', 'CUSTOM PANELS')}
-        self.w.cmb_about.addItem(' ABOUT')
-        for val in self.about_dict.values():
-            self.w.cmb_about.addItem(val[1])
-        
+        self.about_dict = {'vfd'          : 'USING A VFD',
+                           'spindle_pause': 'SPINDLE PAUSE',
+                           'mpg'          : 'USING A MPG',
+                           'touchoff'     : 'TOOL TOUCHOFF',
+                           'runfromline'  : 'RUN FROM LINE',
+                           'stylesheets'  : 'STYLESHEETS',
+                           'rotary_axis'  : 'ROTARY AXIS',
+                           'custom'       : 'CUSTOM PANELS'}
+        self.w.page_buttonGroup.addButton(self.w.btn_about)
+        menu = QMenu(self.w.btn_about)
+        for key, val in self.about_dict.items():
+            action =  QAction(val, self.w.btn_about)
+            action.triggered.connect(lambda checked, t=key: self.update_about_button(t))
+            menu.addAction(action)
+        self.w.btn_about.setMenu(menu)
         self.web_view_about = QWebEngineView()
         self.web_page_about = WebPage()
         self.web_view_about.setPage(self.web_page_about)
@@ -722,12 +806,21 @@ class HandlerClass:
         name = message.get('NAME')
         obj = message.get('OBJECT')
         unhome_code = bool(message.get('ID') == '_unhome_')
+        reload_code = bool(message.get('ID') == '_reload_')
         lower_code = bool(message.get('ID') == '_wait_to_lower_')
         handler_code = bool(message.get('ID') == '_handler_')
         delete_code = bool(message.get('ID') == '_delete_')
+        save_gcode_code = bool(message.get('ID') == '_save_gcode_')
         if unhome_code and name == 'MESSAGE' and rtn is True:
             ACTION.SET_MACHINE_UNHOMED(-1)
             self.add_status("All axes unhomed")
+        if reload_code and name == 'MESSAGE':
+            fname = self.w.cmb_program_history.currentText()
+            self.w.main_tab_widget.setCurrentIndex(TAB_MAIN)
+            self.w.btn_main.setChecked(True)
+            self.w.groupBox_preview.setTitle(self.w.btn_main.property('title'))
+            if rtn is True:
+                ACTION.OPEN_PROGRAM(fname)
         elif lower_code and name == 'MESSAGE':
             self.h['spindle-inhibit'] = False
             # add time delay for spindle to attain speed
@@ -739,6 +832,11 @@ class HandlerClass:
                 self.add_status(f"{self.deleteFile} sent to Trash")
             else:
                 self.add_status(f"{self.deleteFile} not deleted")
+        elif save_gcode_code and name == 'SAVE':
+            if rtn is None: return
+            saved = ACTION.SAVE_PROGRAM(self.w.gcodeeditor.editor.text(), rtn)
+            if saved is not None:
+                self.w.gcodeeditor.editor.setModified(False)
         elif handler_code and name == self.dialog_code:
             obj.setStyleSheet(self.default_line_style)
             if rtn is None: return
@@ -920,8 +1018,8 @@ class HandlerClass:
                 ACTION.CALL_MDI(command)
             if self.last_loaded_program is not None and self.w.chk_reload_program.isChecked():
                 if os.path.isfile(self.last_loaded_program):
-                    self.w.cmb_gcode_history.addItem(self.last_loaded_program)
-                    self.w.cmb_gcode_history.setCurrentIndex(self.w.cmb_gcode_history.count() - 1)
+                    self.w.cmb_program_history.addItem(self.last_loaded_program)
+                    self.w.cmb_program_history.setCurrentIndex(self.w.cmb_program_history.count() - 1)
                     ACTION.OPEN_PROGRAM(self.last_loaded_program)
         ACTION.SET_MANUAL_MODE()
         self.w.manual_mode_button.setChecked(True)
@@ -995,10 +1093,12 @@ class HandlerClass:
         self.zlevel.set_comp_area(zdata)
 
     def hard_limit_tripped(self, obj, tripped, list_of_tripped):
-        self.add_status("Hard limits tripped", ERROR)
-        self.w.chk_override_limits.setEnabled(tripped)
-        if not tripped:
+        if tripped:
+            self.add_status("Hard limits tripped", ERROR)
+            self.w.chk_override_limits.setEnabled(tripped)
+        else:
             self.w.chk_override_limits.setChecked(False)
+            self.add_status("Hard Limits Clear")
 
     # keep check button in synch of external changes
     def _check_override_limits(self,state,data):
@@ -1014,48 +1114,55 @@ class HandlerClass:
     # main button bar
     def main_tab_changed(self, btn):
         index = btn.property("index")
+        title = btn.property("title")
         if index is None: return
-        if index == self.w.main_tab_widget.currentIndex(): return
         spindle_inhibit = False
         if STATUS.is_auto_mode() and index != TAB_SETTINGS:
             self.add_status("Cannot switch pages while in AUTO mode", WARNING)
             self.w.main_tab_widget.setCurrentIndex(TAB_MAIN)
             self.w.btn_main.setChecked(True)
-            self.w.groupBox_preview.setTitle(self.w.btn_main.text())
+            self.w.groupBox_preview.setTitle(self.w.btn_main.property("title"))
             return
         if index == TAB_PROBE:
             spindle_inhibit = self.w.chk_inhibit_spindle.isChecked()
             ACTION.CALL_MDI_WAIT("M5", mode_return=True)
+        elif index == TAB_UTILS:
+            if title == "UTILITIES":
+                self.add_status('Select a utility from the drop down list')
+                self.w.btn_utils.setChecked(False)
+                return
+        elif index == TAB_ABOUT:
+            if title == 'ABOUT':
+                self.add_status('Select an ABOUT topic from the drop down list')
+                self.w.btn_about.setChecked(False)
+                return
         self.w.mdihistory.MDILine.spindle_inhibit(spindle_inhibit)
         self.h['spindle-inhibit'] = spindle_inhibit
         self.w.main_tab_widget.setCurrentIndex(index)
-        self.w.groupBox_preview.setTitle(btn.text())
+        self.w.groupBox_preview.setTitle(title)
 
-    def cmb_utils_activated(self):
-        if self.w.cmb_utils.currentIndex() == 0: return
-        if STATUS.is_auto_mode(): return
-        self.w.main_tab_widget.setCurrentIndex(TAB_UTILS)
-        self.w.stackedWidget_utils.setCurrentIndex(self.w.cmb_utils.currentIndex() - 1)
-        self.w.groupBox_preview.setTitle(self.w.cmb_utils.currentText() + ' UTILITY')
-        self.uncheck_all_buttons(self.w.page_buttonGroup)
-        self.w.cmb_utils.setCurrentIndex(0)
+    def update_utils_button(self, text):
+        try:
+            idx = self.util_list.index(text)
+        except ValueError:
+            self.add_status(f'{text} not found in utilities list', ERROR)
+            return
+        self.w.btn_utils.setText(text.replace(" ", "\n"))
+        self.w.btn_utils.setProperty('title', text + ' UTILITY')
+        self.w.stackedWidget_utils.setCurrentIndex(idx)
+        self.w.btn_utils.setChecked(True)
+        self.main_tab_changed(self.w.btn_utils)
 
-    def cmb_about_activated(self):
-        if self.w.cmb_about.currentIndex() == 0: return
-        if STATUS.is_auto_mode(): return
-        self.w.main_tab_widget.setCurrentIndex(TAB_ABOUT)
-        key = self.w.cmb_about.currentIndex()
-        text = self.about_dict[key]
-        html = text[0]
-        fname = os.path.join(HELP, 'about_' + html + '.html')
+    def update_about_button(self, text):
+        self.w.btn_about.setProperty('title', self.about_dict[text])
+        fname = os.path.join(HELP, 'about_' + text + '.html')
         if os.path.dirname(fname):
             url = QUrl("file:///" + fname)
             self.web_page_about.load(url)
         else:
             self.add_status(f"About file {fname} not found", WARNING)
-        self.w.groupBox_preview.setTitle(text[1])
-        self.uncheck_all_buttons(self.w.page_buttonGroup)
-        self.w.cmb_about.setCurrentIndex(0)
+        self.w.btn_about.setChecked(True)
+        self.main_tab_changed(self.w.btn_about)
 
     # preview frame
     def show_dimensions(self, state):
@@ -1066,11 +1173,17 @@ class HandlerClass:
             self.graphics.showDimensions(state)
 
     # gcode frame
-    def cmb_gcode_history_activated(self):
-        if self.w.cmb_gcode_history.currentIndex() == 0: return
-        filename = self.w.cmb_gcode_history.currentText()
+    def cmb_program_history_activated(self):
+        filename = self.w.cmb_program_history.currentText()
         if filename == self.last_loaded_program:
-            self.add_status("Selected program is already loaded", WARNING)
+            mess = {'NAME': 'MESSAGE',
+                    'ID': '_reload_',
+                    'MESSAGE': 'RELOAD PROGRAM',
+                    'GEONAME': '__message',
+                    'MORE': "Program is already loaded. Reload?",
+                    'NONBLOCKING': True,
+                    'TYPE': 'YESNO'}
+            ACTION.CALL_DIALOG(mess)
         else:
             ACTION.OPEN_PROGRAM(filename)
 
@@ -1438,23 +1551,32 @@ class HandlerClass:
         if not INFO.program_extension_valid(fname):
             self.add_status(f"Unknown or invalid filename extension {file_extension}", WARNING)
             return
-        if file_extension in ('.ngc', '.nc', 'tap', 'py'):
-            self.w.cmb_gcode_history.addItem(fname)
-            self.w.cmb_gcode_history.setCurrentIndex(self.w.cmb_gcode_history.count() - 1)
+        if file_extension in ('.ngc', '.nc', '.tap'):
+            self.w.cmb_program_history.addItem(fname)
+            self.w.cmb_program_history.setCurrentIndex(self.w.cmb_program_history.count() - 1)
             ACTION.OPEN_PROGRAM(fname)
             self.w.main_tab_widget.setCurrentIndex(TAB_MAIN)
             self.w.btn_main.setChecked(True)
+            self.w.groupBox_preview.setTitle(self.w.btn_main.property('title'))
             self.filemanager.recordBookKeeping()
         elif file_extension == '.html':
             self.setup_utils.show_html(fname)
             self.w.main_tab_widget.setCurrentIndex(TAB_UTILS)
             self.w.btn_utils.setChecked(True)
+            self.w.groupBox_preview.setTitle(self.w.btn_utils.property('title'))
             self.add_status(f"Loaded HTML file : {fname}")
         elif file_extension == '.pdf':
             self.setup_utils.show_pdf(fname)
             self.w.main_tab_widget.setCurrentIndex(TAB_UTILS)
             self.w.btn_utils.setChecked(True)
+            self.w.groupBox_preview.setTitle(self.w.btn_utils.property('title'))
             self.add_status(f"Loaded PDF file : {fname}")
+        elif file_extension == '.txt':
+            self.setup_utils.show_text(fname)
+            self.w.main_tab_widget.setCurrentIndex(TAB_UTILS)
+            self.w.btn_utils.setChecked(True)
+            self.w.groupBox_preview.setTitle(self.w.btn_utils.property('title'))
+            self.add_status(f"Loaded text file : {fname}")
         else:
             self.add_status(f"No action for {fname}", WARNING)
 
@@ -1492,6 +1614,17 @@ class HandlerClass:
         self.input_dialog.setLabelText("Enter New Folder Name")
         self.input_dialog.setTextValue(current_path)
         self.input_dialog.show()
+
+    def edit_gcode(self):
+        current_dir = self.filemanager.getCurrentSelected()
+        if current_dir[1] is True:
+            self.source_file = current_dir[0]
+        else:
+            self.add_status("Invalid file name", WARNING)
+            return
+        self.w.stackedWidget_file.setCurrentIndex(1)
+        self.gcode_editor.editor.setModified(False)
+        self.gcode_editor.openCall(self.source_file)
 
     def select_filemanager(self, state):
         self.filemanager = self.w.filemanager_user if state else self.w.filemanager_media
@@ -1750,6 +1883,8 @@ class HandlerClass:
             self.add_status("Touchoff routine is already running", WARNING)
 
     def touchoff_return(self, data):
+        if self.w.chk_auto_toolsensor.isChecked():
+            ACTION.CALL_MDI_WAIT('G53 G0 Z0', mode_return=True)
         self.add_status("Touchoff routine returned success")
             
     def touchoff_error(self, data):
@@ -1808,14 +1943,14 @@ class HandlerClass:
         if state:
             self.w.btn_main.setChecked(True)
             self.w.main_tab_widget.setCurrentIndex(TAB_MAIN)
-            self.w.gcode_history.hide()
+            self.w.cmb_program_history.hide()
             self.w.btn_edit_gcode.setChecked(False)
             self.w.gcode_viewer.readOnlyMode()
             self.w.stackedWidget_gcode.setCurrentIndex(0)
         else:
             i = 1 if STATUS.is_mdi_mode() else 0
             self.w.stackedWidget_gcode.setCurrentIndex(i)
-            self.w.gcode_history.show()
+            self.w.cmb_program_history.show()
 
     def enable_onoff(self, state):
         text = "ON" if state else "OFF"
@@ -1828,7 +1963,7 @@ class HandlerClass:
     def set_start_line(self, line):
         if self.w.chk_run_from_line.isChecked():
             self.start_line = line
-            self.w.btn_cycle_start.setText(f"  CYCLE START\n  LINE {self.start_line}")
+            self.w.btn_cycle_start.setText(f"  CYCLE START\n  FROM LINE {self.start_line}")
         else:
             self.start_line = 1
 
@@ -1852,12 +1987,6 @@ class HandlerClass:
                 rtime = self.tool_db.get_tool_data(self.current_tool, "TIME")
                 text = "---" if rtime is None else f"{rtime:5.1f}"
                 self.w.lineEdit_acc_time.setText(text)
-
-    def uncheck_all_buttons(self, group):
-        group.setExclusive(False)
-        for btn in group.buttons():
-            btn.setChecked(False)
-        group.setExclusive(True)
 
     #####################
     # KEY BINDING CALLS #

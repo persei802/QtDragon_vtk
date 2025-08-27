@@ -70,6 +70,7 @@ class Setup_Utils():
         self.installed_modules = list()
         self.zlevel = None
         self.doc_index = 0
+        self.util_list = []
         # setup XML parser
         xml_filename = os.path.join(HERE, 'utils.xml')
         self.tree = ET.parse(xml_filename)
@@ -92,7 +93,7 @@ class Setup_Utils():
             class_name = util.find("class").text 
             item_text = util.find("name").text
             self.install_module(mod_name, class_name, item_text)
-        # check if Z level compenstation was installed
+        # check if Z level compensation was installed
         if self.zlevel is not None:
             self.parent.zlevel = self.zlevel
         # install permanent utilities
@@ -118,7 +119,7 @@ class Setup_Utils():
             print(f'Import error: {e}')
             return
         self.w.stackedWidget_utils.addWidget(self[mod_name])
-        self.w.cmb_utils.addItem(item)
+        self.util_list.append(item)
         self[mod_name]._hal_init()
         LOG.debug(f"Installed utility: {class_name}")
 
@@ -126,7 +127,7 @@ class Setup_Utils():
         from utils.gcodes import GCodes
         self.gcodes = GCodes()
         self.w.stackedWidget_utils.addWidget(self.gcodes)
-        self.w.cmb_utils.addItem('GCODES')
+        self.util_list.append('GCODES')
         self.gcodes.setup_list()
         LOG.debug("Installed utility: GCodes")
 
@@ -135,14 +136,14 @@ class Setup_Utils():
             from utils.rapid_rotary import Rapid_Rotary
             self.rapid_rotary = Rapid_Rotary(self)
             self.w.stackedWidget_utils.addWidget(self.rapid_rotary)
-            self.w.cmb_utils.addItem('RAPID ROTARY')
+            self.util_list.append('RAPID ROTARY')
             self.rapid_rotary._hal_init()
             LOG.debug("Installed utility: Rapid Rotary")
 
     def install_document_viewer(self):
         self.doc_viewer = QTabWidget()
         self.doc_index = self.w.stackedWidget_utils.addWidget(self.doc_viewer)
-        self.w.cmb_utils.addItem('DOCUMENT VIEWER')
+        self.util_list.append('DOCUMENT VIEWER')
         # html page viewer
         self.web_view_setup = QWebEngineView()
         self.web_page_setup = WebPage()
@@ -151,6 +152,10 @@ class Setup_Utils():
         # PDF page viewer
         self.PDFView = PDFViewer.PDFView()
         self.doc_viewer.addTab(self.PDFView, 'PDF')
+        # text page viewer
+        self.text_view = QPlainTextEdit()
+        self.text_view.setReadOnly(True)
+        self.doc_viewer.addTab(self.text_view, 'TEXT')
         # gcode properties viewer
         self.gcode_properties = QPlainTextEdit()
         self.gcode_properties.setReadOnly(True)
@@ -185,6 +190,13 @@ class Setup_Utils():
         self.w.stackedWidget_utils.setCurrentIndex(self.doc_index)
         self.doc_viewer.setCurrentIndex(1)
 
+    def show_text(self, fname):
+        with open(fname, 'r') as lines:
+            text = lines.read()
+            self.text_view.setPlainText(text)
+        self.w.stackedWidget_utils.setCurrentIndex(self.doc_index)
+        self.doc_viewer.setCurrentIndex(2)
+
     def show_gcode_properties(self, props):
         lines = props.split('\n')
         # convert huge numbers to scientific notation
@@ -208,12 +220,15 @@ class Setup_Utils():
             lines[index] = line
         text = "\n".join(lines)
         self.gcode_properties.setPlainText(text)
-        self.doc_viewer.setCurrentIndex(2)
+        self.doc_viewer.setCurrentIndex(3)
 
     def show_help_page(self, page):
         url = QUrl("file:///" + page)
         self.help_page.load_url(url)
         self.dialog.show()
+
+    def get_util_list(self):
+        return self.util_list
 
     # required code for subscriptable objects
     def __getitem__(self, item):
