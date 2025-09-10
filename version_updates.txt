@@ -1,0 +1,95 @@
+Sep. 09/24 v 1.0.1
+    - created standalone version of check_updates.py
+    - created this file to track version updates
+    - added version number to statusbar
+    - every new commit from this point should increment the version number in the handler file
+
+Sep. 11/24 v 1.0.2
+    - added images for tool touchoff options
+    - fixed some preferences not being saved
+
+Sep. 15/24 v 2.0.3
+    - start version from 2.x.x to differentiate from linuxcnc version
+    - removed version label and integrated it into clock label
+    - add gcode edit button to gcode frame
+
+Sep. 16/24 v 2.0.4
+    - changed all utility files to use main screen statusbar for status messages
+    - changed zlevel utility to request save filename via dialog
+    - changed hole_circle report widget to use qtableview
+    
+Sep. 19/24 v 2.0.5
+    - Zlevel routine can read ngc file to extract working area for probe function
+    - added S32_Sum component to combine eoffset values from spindle pause and compensation
+    
+Oct. 10/24 v 2.0.6
+    - add method to intercept calls to style the main window so that certain widgets
+      and the statusbar can have their text colors altered for visual emphasis
+
+Jan. 5/25 v 2.0.7
+    - fixed keybindings for F1 and Pause, spacebar only works when Key_Any is assigned
+    - fixed statusbar not returning to default style after a WARNING or ERROR status message
+    - changed btn_estop HAL pin type to BIT
+
+Jan. 14/25 v 2.0.8
+    - changed spindle pause to resume on at-speed signal instead of down counter
+    - removed PROBE tab from SETTINGS and moved parameters to TOUCHOFF tab
+    - created HelpPage class in basic_probe.py
+    - updated stylesheets for QToolButton:checked state
+    - added SHOW MACROS button on DRO frame
+    - added calculator mode option for parameter input in basicprobe
+    
+Jan. 16/25 v 2.0.9
+    - added calculator mode option for inputting data to lineEdits
+    
+Jan. 19/25 v 2.1.0
+    - apply formatting to calculator input
+
+Jan. 29/25 v 2.1.1
+    - make sure gcode is displayed when entering AUTO mode
+    - combined HTML and PDF viewers into DOCUMENT VIEWER and added gcode properites display
+    - push gcode properties to zlevel module
+    - import EventFilter class from local lib folder
+    
+Feb. 11/25 v 2.1.2
+    - use 2 filemanagers in FILE page
+    - add checkbox to disable navigation above folder root path
+    - remove left/right file copy buttons and add drag and drop funtionality
+    
+Feb. 17/25 v 2.1.3
+    - use calculator dialog for tool database entry
+    - added DIA and Comment columns to tool database
+    - added code to update tool database to new version if the old one was found
+    - switched filemanager back to qtvcp version due to it being updated with drag and drop and navigation restrictions
+
+Mar. 3/25 v 2.1.4
+    - fixed bug with Zlevel compensation file save names
+    - fixed PAUSE button not showing RESUME when program is paused due to M1
+    
+Mar. 25/25 v 2.1.5
+    - use smart MDI panel as MDI keyboard when enabled in SETTINGS
+    - added missing M codes to mdi_text.py
+
+Jun. 15/25 v 2.1.6
+    - fixed wrong color of run_status label when STOP button pressed
+    - changed TOOL page stackedWidget to tabWidget
+    - added code to call calculator, keyboard or toolchooser dialogs for data entry
+    - reorganized folders to separate utilities, hal files and library files
+    - added several functions to file management
+    - added MDI button panel
+
+Jul. 28/25 v 2.1.7
+    - made ngcgui an optional utility, as per xml file
+    - added utility to create custom macro buttons in addition to buttons defined in INI file
+    - updated all stylesheets to include qspinbox
+    - fixed how macro buttons are shown/hidden
+    
+Aug. 3/25 v 2.1.8
+    - converted UTIL and ABOUT buttons to comboboxes, thus eliminating the scroll menus
+    - updated stylesheets to add combobox hover style
+    - fixed custom_macros not being enabled after machine is turned off and then on
+
+Sep. 10/25 v 2.1.9
+    - complete overhaul of tool database function
+    - added statusbar timeout option in SETTINGS page
+    
