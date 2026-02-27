@@ -15,7 +15,7 @@ import os
 import tempfile
 import atexit
 from PyQt5 import QtCore, QtGui, QtWidgets, uic
-from PyQt5.QtWidgets import QFileDialog, QWidget
+from PyQt5.QtWidgets import QFileDialog, QLineEdit, QWidget
 from qtvcp.core import Info, Status, Action, Tool, Path
 from lib.preview import Preview
 from lib.event_filter import EventFilter
@@ -34,13 +34,13 @@ class Hole_Enlarge(QWidget):
     def __init__(self, parent=None):
         super(Hole_Enlarge, self).__init__()
         self.parent = parent
-        self.tool_db = self.parent.tool_db
         self.h = self.parent.parent
         self.helpfile = 'hole_enlarge_help.html'
         self.dialog_code = 'CALCULATOR'
         self.kbd_code = 'KEYBOARD'
         self.tool_code = 'TOOLCHOOSER'
         self.default_style = ''
+        self.geometry = None
         self.tmpl = '.3f' if INFO.MACHINE_IS_METRIC else '.4f'
         self.units_text = ""
         self.angle_inc = 4
@@ -140,16 +140,41 @@ class Hole_Enlarge(QWidget):
                 obj.setText(str(int(rtn)))
                 self.load_tool()
 
+    def load_tool(self):
+        #check for valid tool and populate dia
+        try:
+            self.tool = int(self.lineEdit_tool.text())
+        except:
+            self.tool = 0
+        if self.tool > 0:
+            info = TOOL.GET_TOOL_INFO(self.tool)
+            dia = info[11]
+            self.lineEdit_tool_dia.setText(f"{dia:8.3f}")
+            self.lineEdit_tool.setStyleSheet(self.default_style)
+            ACTION.CALL_MDI(f"M61 Q{self.tool} G43")
+        else:
+            self.h.add_status("Invalid tool number specified", WARNING)
+            self.lineEdit_tool.setStyleSheet(self.red_border)
+        self.validate()
+
     def create_program(self):
         if not self.validate(): return
-        options = QFileDialog.Options()
-        options |= QFileDialog.DontUseNativeDialog
-        sub_path = INFO.SUB_PATH_LIST
-        _dir = os.path.expanduser(sub_path[0])
-        fileName, _ = QFileDialog.getSaveFileName(self,"Save to file",_dir,"All Files (*);;ngc Files (*.ngc)", options=options)
-        if fileName:
+        dialog = QFileDialog(self)
+        dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+        dialog.setAcceptMode(QFileDialog.AcceptSave)
+        dialog.setFileMode(QFileDialog.AnyFile)
+        dialog.setDirectory(os.path.expanduser('~/linuxcnc/nc_files'))
+        dialog.setNameFilters(["ngc Files (*.ngc)", "All Files (*)"])
+        dialog.setDefaultSuffix("ngc")
+        for le in dialog.findChildren(QLineEdit):
+            le.setCompleter(None)
+        if self.geometry:
+            dialog.restoreGeometry(self.geometry)
+        if dialog.exec_():
+            self.geometry = dialog.saveGeometry()
+            fileName = dialog.selectedFiles()[0]
             self.calculate_program(fileName)
-            self.h.add_status(f"{fileName} successfully created")
+            self.h.add_status(f"Program successfully saved to {fileName}")
         else:
             self.h.add_status("Program creation aborted")
 
@@ -283,24 +308,6 @@ class Hole_Enlarge(QWidget):
             self.h.add_status(f"{fileName} successfully created")
         else:
             print("Program creation aborted")
-
-    def load_tool(self):
-        #check for valid tool and populate rpm, dia and feed parameters
-        try:
-            self.tool = int(self.lineEdit_tool.text())
-        except:
-            self.tool = 0
-
-        if self.tool > 0:
-            info = TOOL.GET_TOOL_INFO(self.tool)
-            dia = info[11]
-            self.lineEdit_tool_dia.setText(f"{dia:8.3f}")
-            rpm = self.tool_db.get_tool_data(self.tool, "RPM")
-            self.lineEdit_spindle.setText(str(rpm))
-            feed = self.tool_db.get_tool_data(self.tool, "FEED")
-            self.lineEdit_feed.setText(str(feed))
-            self.lineEdit_tool.setStyleSheet(self.default_style)
-        self.validate()
 
     def calculate_program(self, fname):
         comment = self.lineEdit_comment.text()
