@@ -13,7 +13,7 @@ class Connections():
         self.w.jog_az.joy_btn_pressed.connect(self.parent.jog_az_pressed)
         self.w.jog_az.joy_btn_released.connect(self.parent.jog_az_released)
         # program control buttons
-        self.w.btn_stop.pressed.connect(self.parent.command_stopped)
+        self.w.btn_stop.pressed.connect(self.parent.btn_stop_pressed)
         self.w.btn_cycle_start.pressed.connect(self.parent.btn_run_pressed)
         self.w.btn_reload.pressed.connect(self.parent.btn_reload_pressed)
         self.w.btn_pause.pressed.connect(self.parent.btn_pause_pressed)
@@ -44,6 +44,7 @@ class Connections():
         self.w.btn_add_tool.pressed.connect(self.parent.btn_add_tool_pressed)
         self.w.btn_delete_tool.pressed.connect(self.parent.btn_delete_tool_pressed)
         self.w.btn_load_tool.pressed.connect(self.parent.btn_load_tool_pressed)
+        self.w.btn_unload_tool.pressed.connect(self.parent.btn_unload_tool_pressed)
         self.w.btn_db_help.pressed.connect(self.parent.show_db_help_page)
         # gcode viewer
         self.w.btn_edit_gcode.clicked.connect(lambda state: self.parent.edit_gcode_changed(state))
@@ -60,7 +61,6 @@ class Connections():
         self.w.chk_manual_toolsensor.stateChanged.connect(lambda state: self.parent.touchoff_changed(state))
         self.w.chk_auto_toolsensor.stateChanged.connect(lambda state: self.parent.touchoff_changed(state))
         # sliders
-        self.w.adj_spindle_ovr.valueChanged.connect(lambda value: self.parent.adj_spindle_ovr_changed(value))
         self.w.cam_diameter.valueChanged.connect(lambda value: self.parent.cam_dia_changed(value))
         self.w.cam_rotate.valueChanged.connect(lambda value: self.parent.cam_rot_changed(value))
         # comboboxes

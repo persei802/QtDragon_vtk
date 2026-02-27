@@ -43,7 +43,8 @@ PATH = Path()
 QHAL = Qhal()
 HELP = os.path.join(PATH.CONFIGPATH, "help_files")
 IMAGES = os.path.join(PATH.HANDLERDIR, 'images')
-VERSION = '2.1.9'
+STYLES = os.path.join(PATH.HANDLERDIR, 'style_rc')
+VERSION = '2.2.1'
 
 # constants for main pages
 TAB_MAIN = 0
@@ -330,21 +331,20 @@ class HandlerClass:
         self.init_pins()
         self.init_preferences()
         self.init_graphics()
+        self.init_macros()
         self.init_tooldb()
+        self.init_utils()
         self.init_widgets()
         self.init_gcode_editor()
         self.init_file_manager()
         self.init_probe()
         self.init_mdi_panel()
-        self.init_macros()
-        self.init_utils()
         self.init_about()
         self.init_adjustments()
         self.init_event_filter()
         # initialize widget states
         self.w.stackedWidget_gcode.setCurrentIndex(0)
         self.w.btn_dimensions.setChecked(True)
-        self.show_dimensions(True)
         self.w.page_buttonGroup.buttonClicked.connect(self.main_tab_changed)
         self.w.preset_buttonGroup.buttonClicked.connect(self.preset_jograte)
         self.use_mpg_changed(self.w.chk_use_mpg.isChecked())
@@ -610,12 +610,15 @@ class HandlerClass:
 
     def init_tooldb(self):
         from lib.tool_db import Tool_Database
-        self.tool_db = Tool_Database(self.w, self)
+        self.tool_db = Tool_Database(self)
         self.w.layout_tooldb.addWidget(self.tool_db)
         self.db_helpfile = os.path.join(HELP, 'tooldb_help.html')
         self.w.btn_export_table.pressed.connect(self.tool_db.export_table)
+        self.w.tabWidget_tools.setCurrentIndex(0)
         self.w.tabWidget_tools.currentChanged.connect(self.tabwidget_tools_changed)
         self.tool_db.hal_init()
+        self.tool_db.load_tool_table(self.tool_list)
+        self.w.lineEdit_num_tools.setText(self.tool_db.get_tool_count())
 
     def init_probe(self):
         probe = INFO.get_error_safe_setting('PROBE', 'USE_PROBE', 'none').lower()
@@ -663,7 +666,6 @@ class HandlerClass:
         if self.zlevel is None:
             self.w.btn_enable_comp.setEnabled(False)
         self.get_next_available()
-        self.tool_db.load_tool_table(self.tool_list)
 
     def init_about(self):
         self.about_dict = {'vfd'          : 'USING A VFD',
@@ -722,14 +724,14 @@ class HandlerClass:
 
     def init_adjustments(self):
         # modify the status adjustment bars to have custom icons
-        icon = QIcon(os.path.join(IMAGES, 'arrow_left.png'))
+        icon = QIcon(os.path.join(STYLES, 'arrow_left.png'))
         icon_size = 24
         for item in self.adj_list:
             btn = self.w[f"adj_{item}"].tb_down
             btn.setArrowType(Qt.NoArrow)
             btn.setIcon(icon)
             btn.setIconSize(QSize(icon_size, icon_size))
-        icon = QIcon(os.path.join(IMAGES, 'arrow_right.png'))
+        icon = QIcon(os.path.join(STYLES, 'arrow_right.png'))
         for item in self.adj_list:
             btn = self.w[f"adj_{item}"].tb_up
             btn.setArrowType(Qt.NoArrow)
@@ -859,7 +861,7 @@ class HandlerClass:
             self.w.lineEdit_tool_in_spindle.setText(str(self.current_tool))
         else:
             self.current_tool = tool
-            ACTION.CALL_MDI_WAIT(f'M61 Q{tool}', mode_return=True)
+            ACTION.CALL_MDI_WAIT(f'M61 Q{tool} G43', mode_return=True)
         self.w.lineEdit_tool_in_spindle.clearFocus()
 
     def spindle_role_changed(self, role):
@@ -913,7 +915,7 @@ class HandlerClass:
             except Exception as e:
                 self.add_status(f"Map ready - {e}", WARNING)
             
-    def command_stopped(self):
+    def btn_stop_pressed(self):
         self.w.lbl_pgm_color.setStyleSheet(f'Background-color: {STOP_COLOR};')
         if self.w.btn_pause_spindle.isChecked():
             self.h['spindle-inhibit'] = False
@@ -922,6 +924,7 @@ class HandlerClass:
         self.h['runtime-start'] = False
         self.h['runtime-pause'] = False
         self.update_runtime()
+        self.w.btn_pause.setText('PAUSE')
         self.w.btn_pause.setEnabled(True)
         self.add_status("Program manually aborted")
         ACTION.ensure_mode(linuxcnc.MODE_MANUAL)
@@ -945,12 +948,13 @@ class HandlerClass:
         self.current_tool = tool
         self.w.lineEdit_tool_in_spindle.setText(str(tool))
         LOG.debug(f"Tool changed to {self.current_tool}")
-        self.tool_db.set_checked_tool(tool)
         data = self.tool_db.get_tool_data(tool)
         if data is None:
             self.add_status("Failed to retrieve data from database", ERROR)
             return
-        maxz, rtime, icon = data
+        maxz = data['length']
+        rtime = data['time']
+        icon = data['icon']
         if icon is None or icon == "undefined":
             self.w.lbl_tool_image.setText("Image\nUndefined")
         else:
@@ -991,17 +995,6 @@ class HandlerClass:
             self.w.progressBar.setValue(pc)
             self.w.progressBar.setFormat(f'PROGRESS: {pc}%')
 
-    def homed(self, obj, joint):
-        i = int(joint)
-        axis = INFO.GET_NAME_FROM_JOINT.get(i).lower()
-        try:
-            widget = self.w[f"dro_axis_{axis}"]
-            widget.setProperty('homed', True)
-            widget.style().unpolish(widget)
-            widget.style().polish(widget)
-        except:
-            pass
-
     def all_homed(self, obj):
         self.w.btn_home_all.setText("ALL\nHOMED")
         self.w.btn_home_all.setProperty('homed', True)
@@ -1023,7 +1016,7 @@ class HandlerClass:
         self.w.btn_ref_camera.setEnabled(self.w.chk_use_camera.isChecked())
         self.add_status("All axes homed")
 
-    def not_all_homed(self, obj, list):
+    def not_all_homed(self, obj, unhomed):
         self.w.btn_home_all.setText("HOME\nALL")
         self.w.btn_home_all.setProperty('homed', False)
         self.w.btn_home_all.style().unpolish(self.w.btn_home_all)
@@ -1212,14 +1205,18 @@ class HandlerClass:
         self.h['runtime-start'] = True
 
     def btn_stop_pressed(self):
-        if STATUS.is_auto_paused():
-            self.pause_timer.stop()
-            self.h['runtime-start'] = False
-            self.h['runtime-pause'] = False
-            self.update_runtime()
+        self.w.lbl_pgm_color.setStyleSheet(f'Background-color: {STOP_COLOR};')
+        if self.w.btn_pause_spindle.isChecked():
+            self.h['spindle-inhibit'] = False
+            self.h['eoffset-count'] = 0
+        self.pause_timer.stop()
+        self.h['runtime-start'] = False
+        self.h['runtime-pause'] = False
+        self.update_runtime()
+        self.w.btn_pause.setText('PAUSE')
         self.w.btn_pause.setEnabled(True)
-        ACTION.ABORT()
         self.add_status("Program manually aborted")
+        ACTION.ensure_mode(linuxcnc.MODE_MANUAL)
 
     def btn_pause_pressed(self):
         if STATUS.is_on_and_idle(): return
@@ -1441,14 +1438,17 @@ class HandlerClass:
             ACTION.SET_MANUAL_MODE()
 
     def btn_ref_laser_clicked(self):
+        if not self.w.btn_laser_on.isChecked():
+            self.add_status('Laser is off, offset not set')
+            return
         x = float(self.w.lineEdit_laser_x.text())
         y = float(self.w.lineEdit_laser_y.text())
-        if not STATUS.is_metric_mode():
+        if INFO.MACHINE_IS_METRIC and not STATUS.is_metric_mode():
             x = x / 25.4
             y = y / 25.4
-        self.add_status("Laser offsets set")
         command = f"G10 L20 P0 X{x:3.4f} Y{y:3.4f}"
         ACTION.CALL_MDI(command)
+        self.add_status("Laser offsets set")
 
     def btn_ref_camera_clicked(self):
         x = float(self.w.lineEdit_camera_x.text())
@@ -1456,9 +1456,9 @@ class HandlerClass:
         if not STATUS.is_metric_mode():
             x = x / 25.4
             y = y / 25.4
-        self.add_status("Camera offsets set")
         command = f"G10 L20 P0 X{x:3.4f} Y{y:3.4f}"
         ACTION.CALL_MDI(command)
+        self.add_status("Camera offsets set")
 
     # override frame
     # this only works if jog adjusters are sliders
@@ -1502,10 +1502,6 @@ class HandlerClass:
             self.w.adj_angular_jog.setValue(int(self.default_angular_jog_vel / 2))
         elif btn == self.w.btn_angular_100:
             self.w.adj_angular_jog.setValue(self.default_angular_jog_vel)
-
-    def adj_spindle_ovr_changed(self, value):
-        frac = int(value * self.max_spindle_rpm / 100)
-        self.w.gauge_spindle.set_threshold(frac)
 
     # FILE tab
     def copy_file(self):
@@ -1684,10 +1680,12 @@ class HandlerClass:
             self.add_status("No tool selected to delete", WARNING)
             return
         if tools[0] == self.current_tool:
-            ACTION.CALL_MDI('M61 Q0', mode_return=True)
+            ACTION.CALL_MDI('M61 Q0 G43', mode_return=True)
         self.w.tooloffsetview.delete_tools()
         self.add_status(f"Deleted tool {tools[0]}")
-        if not self.tool_db.delete_tool(tools[0]):
+        if self.tool_db.delete_tool(tools[0]) is True:
+            self.w.lineEdit_num_tools.setText(self.tool_db.get_tool_count())
+        else:
             self.add_status(f'Failed to delete tool {tools[0]} from database', WARNING)
         self.get_next_available()
 
@@ -1703,6 +1701,9 @@ class HandlerClass:
                 self.add_status("No tool selected", WARNING)
         elif self.w.tabWidget_tools.currentIndex() == 1:
             tool = self.tool_db.get_selected_tool()
+            if tool is None:
+                self.add_status('No tool selected in the database', WARNING)
+                return
             ACTION.CALL_MDI_WAIT(f'M61 Q{tool} G43', mode_return=True)
             self.add_status(f"Tool {tool} loaded")
 
@@ -1818,7 +1819,7 @@ class HandlerClass:
         elif col in (7, 15, 19):
             array = TOOL.GET_TOOL_ARRAY()
             line = array[row]
-            if not self.tool_db.update_tool_data(line[0], (line[4], line[11], line[15])):
+            if not self.tool_db.update_tool_table(line[0], (line[4], line[11], line[15])):
                 self.add_status('Failed to update tool data to database', WARNING)
 
     def tool_number_changed(self, old_tno, new_tno):
@@ -1847,7 +1848,6 @@ class HandlerClass:
 
     def get_checked_tools(self):
         checked = self.w.tooloffsetview.get_checked_list()
-        if checked: self.tool_db.set_checked_tool(checked[0])
         return checked
 
     def get_next_available(self):
@@ -1971,7 +1971,6 @@ class HandlerClass:
         if not STATUS.machine_is_on(): return
         if self.zlevel is not None:
             self.w.btn_enable_comp.setEnabled(not state)
-        self.w.btn_pause_spindle.setEnabled(not state)
         self.w.btn_goto_sensor.setEnabled(not state)
         self.w.groupBox_jog_pads.setEnabled(not state)
         self.w.btn_cycle_start.setEnabled(state)
@@ -1981,14 +1980,14 @@ class HandlerClass:
         if state:
             self.w.btn_main.setChecked(True)
             self.w.main_tab_widget.setCurrentIndex(TAB_MAIN)
-            self.w.cmb_program_history.hide()
+            self.w.cmb_program_history.setEnabled(False)
             self.w.btn_edit_gcode.setChecked(False)
             self.w.gcode_viewer.readOnlyMode()
             self.w.stackedWidget_gcode.setCurrentIndex(0)
         else:
             i = 1 if STATUS.is_mdi_mode() else 0
             self.w.stackedWidget_gcode.setCurrentIndex(i)
-            self.w.cmb_program_history.show()
+            self.w.cmb_program_history.setEnabled(True)
 
     def enable_onoff(self, state):
         text = "ON" if state else "OFF"
@@ -2026,7 +2025,7 @@ class HandlerClass:
                 if data is None:
                     text = "---"
                 else:
-                    rtime = data[1]
+                    rtime = data['time']
                     text = f"{rtime:5.1f}"
                 self.w.lineEdit_acc_time.setText(text)
 

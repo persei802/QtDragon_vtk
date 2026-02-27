@@ -33,7 +33,7 @@
    </size>
   </property>
   <property name="windowTitle">
-   <string>QT Dragon 2.1</string>
+   <string>VTK Dragon 2.2</string>
   </property>
   <property name="autoFillBackground">
    <bool>false</bool>
@@ -2437,7 +2437,7 @@ color: black;</string>
                        <string/>
                       </property>
                       <property name="icon">
-                       <iconset resource="qtdragon.qrc">
+                       <iconset>
                         <normaloff>:/images/images/arrow_up.png</normaloff>:/images/images/arrow_up.png</iconset>
                       </property>
                       <property name="iconSize">
@@ -2475,7 +2475,7 @@ color: black;</string>
                        <string/>
                       </property>
                       <property name="icon">
-                       <iconset resource="qtdragon.qrc">
+                       <iconset>
                         <normaloff>:/images/images/arrow_down.png</normaloff>:/images/images/arrow_down.png</iconset>
                       </property>
                       <property name="iconSize">
@@ -2513,7 +2513,7 @@ color: black;</string>
                        <string/>
                       </property>
                       <property name="icon">
-                       <iconset resource="qtdragon.qrc">
+                       <iconset>
                         <normaloff>:/images/images/arrow_left.png</normaloff>:/images/images/arrow_left.png</iconset>
                       </property>
                       <property name="iconSize">
@@ -2542,7 +2542,7 @@ color: black;</string>
                        <string/>
                       </property>
                       <property name="icon">
-                       <iconset resource="qtdragon.qrc">
+                       <iconset>
                         <normaloff>:/images/images/arrow_right.png</normaloff>:/images/images/arrow_right.png</iconset>
                       </property>
                       <property name="iconSize">
@@ -2753,7 +2753,7 @@ color: black;</string>
                 <number>0</number>
                </property>
                <property name="currentIndex">
-                <number>7</number>
+                <number>3</number>
                </property>
                <widget class="QWidget" name="main_tab_Preview">
                 <layout class="QVBoxLayout" name="verticalLayout_2" stretch="0,0">
@@ -5459,6 +5459,70 @@ TABLE</string>
                      </spacer>
                     </item>
                     <item>
+                     <widget class="QLabel" name="label_56">
+                      <property name="minimumSize">
+                       <size>
+                        <width>0</width>
+                        <height>30</height>
+                       </size>
+                      </property>
+                      <property name="maximumSize">
+                       <size>
+                        <width>16777215</width>
+                        <height>30</height>
+                       </size>
+                      </property>
+                      <property name="text">
+                       <string>NUMBER
+OF TOOLS</string>
+                      </property>
+                      <property name="alignment">
+                       <set>Qt::AlignCenter</set>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLineEdit" name="lineEdit_num_tools">
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                      <property name="minimumSize">
+                       <size>
+                        <width>60</width>
+                        <height>30</height>
+                       </size>
+                      </property>
+                      <property name="maximumSize">
+                       <size>
+                        <width>60</width>
+                        <height>30</height>
+                       </size>
+                      </property>
+                      <property name="alignment">
+                       <set>Qt::AlignCenter</set>
+                      </property>
+                      <property name="readOnly">
+                       <bool>true</bool>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <spacer name="horizontalSpacer_2">
+                      <property name="orientation">
+                       <enum>Qt::Horizontal</enum>
+                      </property>
+                      <property name="sizeHint" stdset="0">
+                       <size>
+                        <width>40</width>
+                        <height>20</height>
+                       </size>
+                      </property>
+                     </spacer>
+                    </item>
+                    <item>
                      <widget class="QLabel" name="lbl_next_available">
                       <property name="text">
                        <string>NEXT
@@ -6532,7 +6596,7 @@ TO FILE</string>
                        <number>2</number>
                       </property>
                       <property name="text">
-                       <string>07:22:41 PM</string>
+                       <string>03:40:16 PM</string>
                       </property>
                       <property name="alignment">
                        <set>Qt::AlignCenter</set>
@@ -10882,7 +10946,7 @@ ACTIVE</string>
                   <bool>false</bool>
                  </property>
                  <property name="indicator_option" stdset="0">
-                  <bool>true</bool>
+                  <bool>false</bool>
                  </property>
                  <property name="indicator_HAL_pin_option" stdset="0">
                   <bool>false</bool>
@@ -10896,8 +10960,8 @@ ACTIVE</string>
                  <property name="on_color" stdset="0">
                   <color>
                    <red>0</red>
-                   <green>255</green>
-                   <blue>0</blue>
+                   <green>170</green>
+                   <blue>255</blue>
                   </color>
                  </property>
                  <property name="shape_option" stdset="0">
@@ -11004,7 +11068,7 @@ ACTIVE</string>
                   <bool>false</bool>
                  </property>
                  <property name="indicator_option" stdset="0">
-                  <bool>true</bool>
+                  <bool>false</bool>
                  </property>
                  <property name="indicator_HAL_pin_option" stdset="0">
                   <bool>false</bool>
@@ -11018,8 +11082,8 @@ ACTIVE</string>
                  <property name="on_color" stdset="0">
                   <color>
                    <red>0</red>
-                   <green>255</green>
-                   <blue>0</blue>
+                   <green>170</green>
+                   <blue>255</blue>
                   </color>
                  </property>
                  <property name="shape_option" stdset="0">
@@ -11126,7 +11190,7 @@ ACTIVE</string>
                   <bool>false</bool>
                  </property>
                  <property name="indicator_option" stdset="0">
-                  <bool>true</bool>
+                  <bool>false</bool>
                  </property>
                  <property name="indicator_HAL_pin_option" stdset="0">
                   <bool>false</bool>
@@ -11140,8 +11204,8 @@ ACTIVE</string>
                  <property name="on_color" stdset="0">
                   <color>
                    <red>0</red>
-                   <green>255</green>
-                   <blue>0</blue>
+                   <green>170</green>
+                   <blue>255</blue>
                   </color>
                  </property>
                  <property name="shape_option" stdset="0">
@@ -11530,7 +11594,7 @@ BLOCK</string>
                   <bool>false</bool>
                  </property>
                  <property name="indicator_option" stdset="0">
-                  <bool>true</bool>
+                  <bool>false</bool>
                  </property>
                  <property name="indicator_status_option" stdset="0">
                   <bool>true</bool>
@@ -11538,8 +11602,8 @@ BLOCK</string>
                  <property name="on_color" stdset="0">
                   <color>
                    <red>0</red>
-                   <green>255</green>
-                   <blue>0</blue>
+                   <green>170</green>
+                   <blue>255</blue>
                   </color>
                  </property>
                  <property name="is_block_delete_status" stdset="0">
@@ -11572,7 +11636,7 @@ PAUSE</string>
                   <string/>
                  </property>
                  <property name="indicator_option" stdset="0">
-                  <bool>true</bool>
+                  <bool>false</bool>
                  </property>
                  <property name="indicator_HAL_pin_option" stdset="0">
                   <bool>false</bool>
@@ -11634,7 +11698,7 @@ PAUSE</string>
                   <bool>false</bool>
                  </property>
                  <property name="indicator_option" stdset="0">
-                  <bool>true</bool>
+                  <bool>false</bool>
                  </property>
                  <property name="indicator_status_option" stdset="0">
                   <bool>true</bool>
@@ -11645,8 +11709,8 @@ PAUSE</string>
                  <property name="on_color" stdset="0">
                   <color>
                    <red>0</red>
-                   <green>255</green>
-                   <blue>0</blue>
+                   <green>170</green>
+                   <blue>255</blue>
                   </color>
                  </property>
                  <property name="true_state_string" stdset="0">
@@ -11724,13 +11788,13 @@ STOP</string>
                   <bool>false</bool>
                  </property>
                  <property name="indicator_option" stdset="0">
-                  <bool>true</bool>
+                  <bool>false</bool>
                  </property>
                  <property name="on_color" stdset="0">
                   <color>
                    <red>0</red>
-                   <green>255</green>
-                   <blue>0</blue>
+                   <green>170</green>
+                   <blue>255</blue>
                   </color>
                  </property>
                  <property name="is_optional_stop_status" stdset="0">
@@ -11848,7 +11912,7 @@ STOP</string>
                   <bool>false</bool>
                  </property>
                  <property name="indicator_option" stdset="0">
-                  <bool>true</bool>
+                  <bool>false</bool>
                  </property>
                  <property name="doubleIndicator" stdset="0">
                   <bool>false</bool>
@@ -11862,8 +11926,8 @@ STOP</string>
                  <property name="on_color" stdset="0">
                   <color>
                    <red>0</red>
-                   <green>255</green>
-                   <blue>0</blue>
+                   <green>170</green>
+                   <blue>255</blue>
                   </color>
                  </property>
                  <property name="true_state_string" stdset="0">
@@ -11932,7 +11996,7 @@ ENABLE</string>
                   <bool>true</bool>
                  </property>
                  <property name="indicator_option" stdset="0">
-                  <bool>true</bool>
+                  <bool>false</bool>
                  </property>
                  <property name="on_color" stdset="0">
                   <color>
@@ -14256,7 +14320,7 @@ OFF</string>
                    <bool>false</bool>
                   </property>
                   <property name="indicator_option" stdset="0">
-                   <bool>true</bool>
+                   <bool>false</bool>
                   </property>
                   <property name="checked_state_text_option" stdset="0">
                    <bool>true</bool>
@@ -15334,7 +15398,7 @@ WCS</string>
                     <string>at_speed_rev</string>
                    </property>
                    <property name="indicator_option" stdset="0">
-                    <bool>true</bool>
+                    <bool>false</bool>
                    </property>
                    <property name="indicator_HAL_pin_option" stdset="0">
                     <bool>false</bool>
@@ -15499,7 +15563,7 @@ WCS</string>
                     <string>at_speed_fwd</string>
                    </property>
                    <property name="indicator_option" stdset="0">
-                    <bool>true</bool>
+                    <bool>false</bool>
                    </property>
                    <property name="indicator_HAL_pin_option" stdset="0">
                     <bool>false</bool>
@@ -15982,13 +16046,13 @@ WCS</string>
   <slot>chk_enable_spindle_changed()</slot>
  </slots>
  <buttongroups>
+  <buttongroup name="mdi_buttonGroup"/>
   <buttongroup name="mode_buttonGroup"/>
+  <buttongroup name="page_buttonGroup"/>
   <buttongroup name="preset_buttonGroup">
    <property name="exclusive">
     <bool>false</bool>
    </property>
   </buttongroup>
-  <buttongroup name="mdi_buttonGroup"/>
-  <buttongroup name="page_buttonGroup"/>
  </buttongroups>
 </ui>
