@@ -44,7 +44,7 @@ QHAL = Qhal()
 HELP = os.path.join(PATH.CONFIGPATH, "help_files")
 IMAGES = os.path.join(PATH.HANDLERDIR, 'images')
 STYLES = os.path.join(PATH.HANDLERDIR, 'style_rc')
-VERSION = '2.2.1'
+VERSION = '2.2.2'
 
 # constants for main pages
 TAB_MAIN = 0
@@ -246,6 +246,7 @@ class HandlerClass:
         self.filemanager = None
         self.deleteFile = None
         self.current_tool = 0
+        self.pgm_start_time = 0.0
         self.tool_list = []
         self.next_available = 0
         self.start_line = 0
@@ -333,8 +334,8 @@ class HandlerClass:
         self.init_graphics()
         self.init_macros()
         self.init_tooldb()
-        self.init_utils()
         self.init_widgets()
+        self.init_utils()
         self.init_gcode_editor()
         self.init_file_manager()
         self.init_probe()
@@ -349,7 +350,6 @@ class HandlerClass:
         self.w.preset_buttonGroup.buttonClicked.connect(self.preset_jograte)
         self.use_mpg_changed(self.w.chk_use_mpg.isChecked())
         self.use_camera_changed(self.w.chk_use_camera.isChecked())
-        self.chk_use_basic_calc(self.w.chk_use_basic_calculator.isChecked())
         self.touchoff_changed(True)
         # determine if A axis widgets should be visible or not
         if not "A" in self.axis_list:
@@ -407,9 +407,6 @@ class HandlerClass:
         QHAL.newpin("eoffset-count", Qhal.HAL_S32, Qhal.HAL_OUT)
         pin = QHAL.newpin("eoffset-value", Qhal.HAL_FLOAT, Qhal.HAL_IN)
         pin.value_changed.connect(self.eoffset_value_changed)
-        pin = QHAL.newpin("map-ready", Qhal.HAL_BIT, Qhal.HAL_IN)
-        pin.value_changed.connect(self.map_ready_changed)
-        QHAL.newpin("comp-on", Qhal.HAL_BIT, Qhal.HAL_OUT)
         # MPG axis select pins
         pin = QHAL.newpin("axis-select-x", Qhal.HAL_BIT, Qhal.HAL_IN)
         pin.value_changed.connect(self.show_selected_axis)
@@ -638,7 +635,6 @@ class HandlerClass:
         else:
             LOG.info("No valid probe widget specified")
             self.w.btn_probe.hide()
-            self.w.chk_use_basic_calculator.hide()
             self.w.chk_inhibit_spindle.hide()
             self.w.probe_offset.hide()
             return
@@ -813,9 +809,6 @@ class HandlerClass:
             self.add_status("All axes unhomed")
         if reload_code and name == 'MESSAGE':
             fname = self.w.cmb_program_history.currentText()
-            self.w.main_tab_widget.setCurrentIndex(TAB_MAIN)
-            self.w.btn_main.setChecked(True)
-            self.w.groupBox_preview.setTitle(self.w.btn_main.property('title'))
             if rtn is True:
                 ACTION.OPEN_PROGRAM(fname)
         elif lower_code and name == 'MESSAGE':
@@ -908,27 +901,6 @@ class HandlerClass:
         else:
             self.w.lineEdit_eoffset.setText(f"{data:.3f}")
 
-    def map_ready_changed(self, state):
-        if state:
-            try:
-                self.zlevel.map_ready()
-            except Exception as e:
-                self.add_status(f"Map ready - {e}", WARNING)
-            
-    def btn_stop_pressed(self):
-        self.w.lbl_pgm_color.setStyleSheet(f'Background-color: {STOP_COLOR};')
-        if self.w.btn_pause_spindle.isChecked():
-            self.h['spindle-inhibit'] = False
-            self.h['eoffset-count'] = 0
-        self.pause_timer.stop()
-        self.h['runtime-start'] = False
-        self.h['runtime-pause'] = False
-        self.update_runtime()
-        self.w.btn_pause.setText('PAUSE')
-        self.w.btn_pause.setEnabled(True)
-        self.add_status("Program manually aborted")
-        ACTION.ensure_mode(linuxcnc.MODE_MANUAL)
-
     def user_system_changed(self, data):
         sys = self.system_list[int(data) - 1]
         self.w.systemtoolbutton.setText(sys)
@@ -962,8 +934,8 @@ class HandlerClass:
             self.w.lbl_tool_image.setPixmap(QPixmap(icon_file))
         text = "---" if maxz is None else str(maxz)
         self.w.lineEdit_max_depth.setText(text)
-        text = "---" if rtime is None else f"{rtime:5.1f}"
-        self.w.lineEdit_acc_time.setText(text)
+        self.pgm_start_time = rtime
+        self.w.lineEdit_acc_time.setText(f'{rtime:.1f}')
 
     def file_loaded(self, filename):
         if filename is not None:
@@ -1027,6 +999,9 @@ class HandlerClass:
         minutes = self.h['runtime-minutes']
         seconds = self.h['runtime-seconds']
         self.w.lineEdit_runtime.setText(f"{hours:02d}:{minutes:02d}:{seconds:02d}")
+        run_minutes = (hours * 60) + minutes + (seconds / 60)
+        tis_minutes = run_minutes + self.pgm_start_time
+        self.w.lineEdit_acc_time.setText(f'{tis_minutes:.1f}')
 
     def pause_changed(self, state):
         if not STATUS.is_auto_mode(): return
@@ -1217,6 +1192,10 @@ class HandlerClass:
         self.w.btn_pause.setEnabled(True)
         self.add_status("Program manually aborted")
         ACTION.ensure_mode(linuxcnc.MODE_MANUAL)
+        if self.current_tool > 0:
+            tis = float(self.w.lineEdit_acc_time.text())
+            if self.tool_db.update_tool_time(self.current_tool, tis) is None:
+                self.add_status(f'Update tool {self.current_tool} time in spindle error', WARNING)
 
     def btn_pause_pressed(self):
         if STATUS.is_on_and_idle(): return
@@ -1263,23 +1242,19 @@ class HandlerClass:
 
     def btn_enable_comp_clicked(self, state):
         if state:
-            fname = self.zlevel.get_map()
+            fname = self.zlevel.get_map(True)
             if fname is None:
-                self.add_status("No map file loaded - go to UTILS -> ZLEVEL and load a map file", WARNING)
-                self.w.btn_enable_comp.setChecked(False)
-                return
-            if not os.path.isfile(fname):
-                self.add_status(f"No such file - {fname}", WARNING)
-                self.w.btn_enable_comp.setChecked(False)
+                self.add_status(f"No compensation file for {self.current_loaded_program}", WARNING)
+                self.w.btn_enable_comp.setText("Z COMP\nDISABLED")
                 return
             if not QHAL.hal.component_exists("compensate"):
                 self.add_status("Z level compensation HAL component not loaded", ERROR)
-                self.w.btn_enable_comp.setChecked(False)
+                self.w.btn_enable_comp.setText("Z COMP\nDISABLED")
                 return
-            self.h['comp-on'] = True
             self.add_status(f"Z level compensation ON using {fname}")
+            self.w.btn_enable_comp.setText("Z COMP\nENABLED")
         else:
-            self.h['comp-on'] = False
+            self.zlevel.get_map(False)
             self.h['eoffset-count'] = 0
             self.add_status("Z level compensation OFF")
             if not self.w.btn_pause_spindle.isChecked():
@@ -1669,6 +1644,7 @@ class HandlerClass:
         array = [self.next_available, self.next_available, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 'New Tool']
         TOOL.ADD_TOOL(array)
         if self.tool_db.add_tool(self.next_available) is True:
+            self.w.lineEdit_num_tools.setText(self.tool_db.get_tool_count())
             self.add_status(f"Added new tool {self.next_available}")
         else:
             self.add_status('Failed to add tool to database', WARNING)
@@ -1773,11 +1749,6 @@ class HandlerClass:
             self.w.btn_cycle_start.setText('  CYCLE START')
             self.start_line = 1
 
-    def chk_use_basic_calc(self, state):
-        if self.probe is None: return
-        if self.probe.objectName() == 'basicprobe':
-            self.probe.set_calc_mode(state)
-
     def touchoff_changed(self, state):
         if not state: return
         image = ''
@@ -1834,12 +1805,14 @@ class HandlerClass:
             array = [new_tno[0], new_tno[0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 'New Tool']
             TOOL.ADD_TOOL(array)
             if self.tool_db.add_tool(new_tno[0]) is True:
+                self.w.lineEdit_num_tools.setText(self.tool_db.get_tool_count())
                 self.add_status(f'Added tool {new_tno[0]} to database')
             else:
                 self.add_status(f'Failed to add tool {new_tno[0]} to database', WARNING)
         # there are duplicate tools in the new list
         elif len(old_tno) > 0 and len(new_tno) == 0:
-            if self.tool_db.delete_tool(old_tno[0]):
+            if self.tool_db.delete_tool(old_tno[0]) is True:
+                self.w.lineEdit_num_tools.setText(self.tool_db.get_tool_count())
                 self.add_status(f'Deleted tool {old_tno[0]} from database')
             else:
                 self.add_status(f'Failed to delete tool {tools[0]} from database', WARNING)
@@ -2018,16 +1991,9 @@ class HandlerClass:
             self.h['runtime-start'] = False
             self.add_status(f"Run timer stopped at {self.w.lineEdit_runtime.text()}")
             if self.current_tool > 0:
-                rtime = self.w.lineEdit_runtime.text().split(':')
-                mtime = (float(rtime[0]) * 60) + float(rtime[1]) + (float(rtime[2]) / 60)
-                self.tool_db.update_tool_time(self.current_tool, mtime)
-                data = self.tool_db.get_tool_data(self.current_tool)
-                if data is None:
-                    text = "---"
-                else:
-                    rtime = data['time']
-                    text = f"{rtime:5.1f}"
-                self.w.lineEdit_acc_time.setText(text)
+                tis = float(self.w.lineEdit_acc_time.text())
+                if self.tool_db.update_tool_time(self.current_tool, tis) is None:
+                    self.add_satus(f'Update tool {self.current_tool} time in spindle error', WARNING)
 
     #####################
     # KEY BINDING CALLS #
