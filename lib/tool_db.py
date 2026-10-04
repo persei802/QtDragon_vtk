@@ -35,7 +35,7 @@ INFO = Info()
 PATH = Path()
 TOOL = Tool()
 LOG = logger.getLogger(__name__)
-LOG.setLevel(logger.DEBUG) # One of DEBUG, INFO, WARNING, ERROR, CRITICAL
+LOG.setLevel(logger.INFO) # One of DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 VERSION = '2.0'
 DB_NAME = 'tool_database.db'
@@ -521,7 +521,6 @@ class Tool_Database(QWidget):
     def __init__(self, parent=None):
         super(Tool_Database, self).__init__()
         self.parent = parent
-        self.helpfile = 'tooldb_help.html'
         self.database = os.path.join(PATH.CONFIGPATH, DB_NAME)
         self.unit_labels = ['tlo_unit', 'diameter_unit', 'flute_unit', 'stepover_unit', 'depth_unit']
         self.dialog_code = 'CALCULATOR'
@@ -827,13 +826,7 @@ class Tool_Database(QWidget):
         return self.agent.update_tool_number(old, new)
 
     def update_tool_time(self, tno, time):
-        record = self.agent.get_tool_data(tno)
-        if record is None: return
-        ptime = record['time']
-        if ptime is not None:
-            total_time = round(ptime + time, 3)
-            self.lineEdit_time_in_spindle.setText(self.min_to_hms(total_time))
-            self.update_tool_data(tno)
+        return self.agent.update_tool_time(tno, time)
 
     def get_selected_tool(self):
         selected_item = self.treeWidget.currentItem()

@@ -11,17 +11,18 @@
 # GNU General Public License for more details.
 
 import os
-import shutil
+import threading
 import datetime
 import linuxcnc
 from send2trash import send2trash
 from connections import Connections
 from lib.event_filter import EventFilter
-from PyQt5.QtCore import QObject, QEvent, QSize, QRegExp, QTimer, Qt, QUrl
-from PyQt5.QtGui import QSyntaxHighlighter, QTextCharFormat, QIntValidator, QRegExpValidator, QFont, QColor, QIcon, QPixmap
-from PyQt5.QtWidgets import (QWidget, QCheckBox, QLineEdit, QStyle, QDialog, QInputDialog, QMessageBox,
-                             QMenu, QAction, QToolButton)
-from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEnginePage
+from lib.vtk_graphics import VTKGraphics
+
+from qtpy.QtCore import QObject, QEvent, QSize, QRegExp, QTimer, Qt, QUrl, QPropertyAnimation, QEasingCurve, Signal, Slot
+from qtpy.QtGui import QSyntaxHighlighter, QTextCharFormat, QIntValidator, QRegExpValidator, QFont, QColor, QIcon, QPixmap
+from qtpy.QtWidgets import QWidget, QCheckBox, QLineEdit, QStyle, QDialog, QMenu, QAction, QToolButton
+
 from qtvcp.widgets.gcode_editor import GcodeEditor, GcodeEditor as GCODE
 from qtvcp.widgets.mdi_history import MDIHistory as MDI_WIDGET
 from qtvcp.widgets.tool_offsetview import ToolOffsetView as TOOL_TABLE
@@ -44,7 +45,7 @@ QHAL = Qhal()
 HELP = os.path.join(PATH.CONFIGPATH, "help_files")
 IMAGES = os.path.join(PATH.HANDLERDIR, 'images')
 STYLES = os.path.join(PATH.HANDLERDIR, 'style_rc')
-VERSION = '2.2.2'
+VERSION = '2.2.8'
 
 # constants for main pages
 TAB_MAIN = 0
@@ -148,75 +149,21 @@ class MDIPanel(QWidget):
         self.mdiLine.setText(self.w.cmb_mdi_texts.currentText())
         self.w.cmb_mdi_texts.setCurrentIndex(0)
 
-# this class provides an overloaded function to disable navigation links
-class WebPage(QWebEnginePage):
-    def acceptNavigationRequest(self, url, navtype, mainframe):
-        if navtype == self.NavigationTypeLinkClicked: return False
-        return super().acceptNavigationRequest(url, navtype, mainframe)
 
-
-class Gcode_Editor(GcodeEditor):
+class MonitorStatus:
     def __init__(self, parent):
-        super(Gcode_Editor, self).__init__()
         self.parent = parent
-        self.w = self.parent.w
-        self.active_file = None
-        self.editor.setCaretForegroundColor(Qt.yellow)
-        # instance patch the GcodeEditor actions
-        try:
-            self.newAction.triggered.disconnect()
-            self.openAction.triggered.disconnect()
-            self.saveAction.triggered.disconnect()
-            self.exitAction.triggered.disconnect()
-        except TypeError:
-            pass
-        self.newAction.triggered.connect(self.newCall)
-        self.openAction.triggered.connect(lambda: self.openCall(fname=None))
-        self.saveAction.triggered.connect(lambda: self.saveCall(fname=None))
-        self.exitAction.triggered.connect(self.exitCall)
-        # permanently set to editing mode
-        self.editMode()
+        self.lock = threading.Lock()
 
-    def newCall(self):
-        self.active_file = None
-        self.new()
+    def update(self, **kwargs):
+        with self.lock:
+            self.data.update(kwargs)
 
-    def openCall(self, fname=None):
-        if self.editor.isModified():
-            result = self.killCheck()
-            if not result: return
-        if fname is None:
-            self.getFileName()
-        else:
-            self.active_file = fname
-            self.editor.load_text(fname)
-            self.label.setText(f'  Editing {fname}')
-            self.parent.add_status(f"Opened gcode file {fname}")
+    def get(self):
+        with self.lock:
+            status = self.parent.get_status()
+        return status
 
-    def saveCall(self, fname=None):
-        if self.active_file is None:
-            self.getSaveFileName()
-        else:
-            saved = ACTION.SAVE_PROGRAM(self.editor.text(), self.active_file)
-            if saved is not None:
-                self.editor.setModified(False)
-                self.parent.add_status(f"Saved gcode file {self.active_file}")
-            
-    def exitCall(self):
-        if self.editor.isModified():
-            result = self.killCheck()
-            if not result: return
-        self.w.stackedWidget_file.setCurrentIndex(0)
-
-    def openReturn(self, fname):
-        self.openCall(fname)
-        self.editor.setModified(False)
-
-    def saveReturn(self, fname):
-        self.active_file = fname
-        saved = ACTION.SAVE_PROGRAM(self.editor.text(), fname)
-        if saved is not None:
-            self.editor.setModified(False)
 
 class HandlerClass:
     def __init__(self, halcomp, widgets, paths):
@@ -228,6 +175,9 @@ class HandlerClass:
         self.settings_touchoff = []
         self.settings_offsets = []
         self.settings_spindle = []
+
+        print('Self ', self)
+
         KEYBIND.add_call('Key_F4', 'on_keycall_F4')
         KEYBIND.add_call('Key_F12','on_keycall_F12')
         KEYBIND.add_call('Key_Pause', 'on_keycall_PAUSE')
@@ -238,6 +188,7 @@ class HandlerClass:
         self.tool_db = None
         self.zlevel = None
         self.mdiPanel = None
+#        self.graphics = VTKGraphics(self)
         # some global variables
         self.status_timeout = 10000
         self.dialog_code = 'CALCULATOR'
@@ -271,6 +222,7 @@ class HandlerClass:
         self.slow_angular_jog = False
         self.slow_jog_factor = 10
         self.reload_tool = 0
+        self.comp_enable = False
         self.last_loaded_program = ""
         self.current_loaded_program = None
         self.first_turnon = True
@@ -283,21 +235,23 @@ class HandlerClass:
                           'reload'     : 'SP_BrowserReload',
                           'step'       : 'SP_ArrowForward',
                           'pause'      : 'SP_MediaPause',
-                          'stop'       : 'SP_MediaStop'}
+                          'stop'       : 'SP_MediaStop',
+                          'load_file'  : 'SP_MediaPlay'}
 
         self.adj_list = ['maxvel_ovr', 'rapid_ovr', 'feed_ovr', 'spindle_ovr']
 
         self.unit_label_list = ["zoffset_units", "retract_units", "zsafe_units", "touch_units", "max_probe_units",
                                 "start_height_units", "sensor_units", "gauge_units", "rotary_units", "mpg_units"]
 
-        self.unit_speed_list = ["search_vel_units", "probe_vel_units"]
-
         self.lineedit_list = ["work_height", "touch_height", "sensor_height", "laser_x", "laser_y", "camera_x", "camera_y",
                               "search_vel", "probe_vel", "retract", "max_probe", "start_height", "eoffset", "sensor_x", "sensor_y",
                               "zsafe", "probe_x", "probe_y", "rotary_height", "gauge_height", "spindle_raise"]
 
         self.axis_a_list = ["dro_axis_a", "lbl_max_angular", "lbl_max_angular_vel", "angular_increment",
-                            "action_zero_a", "btn_rewind_a", "action_home_a", "widget_angular_jog"]
+                            "action_zero_a", "btn_rewind_a", "action_home_a", "widget_angular_jog", "axis_a_height"]
+
+        self.remap_parms = ['work_height', 'sensor_height', 'sensor_x', 'sensor_y',
+                            'search_vel', 'probe_vel', 'max_probe', 'retract', 'zsafe']
 
         self.gcode_titles = ["GCODE", "MDI INPUT"]
 
@@ -314,7 +268,7 @@ class HandlerClass:
         STATUS.connect('user-system-changed', lambda w, data: self.user_system_changed(data))
         STATUS.connect('metric-mode-changed', lambda w, mode: self.metric_mode_changed(mode))
         STATUS.connect('tool-in-spindle-changed', lambda w, tool: self.tool_changed(tool))
-        STATUS.connect('file-loaded', lambda w, filename: self.file_loaded(filename))
+        STATUS.connect('file-loaded', lambda w, filename: self.program_loaded(filename))
         STATUS.connect('all-homed', self.all_homed)
         STATUS.connect('not-all-homed', self.not_all_homed)
         STATUS.connect('program_pause_changed', lambda w, state: self.pause_changed(state))
@@ -331,7 +285,6 @@ class HandlerClass:
     def initialized__(self):
         self.init_pins()
         self.init_preferences()
-        self.init_graphics()
         self.init_macros()
         self.init_tooldb()
         self.init_widgets()
@@ -340,12 +293,12 @@ class HandlerClass:
         self.init_file_manager()
         self.init_probe()
         self.init_mdi_panel()
-        self.init_about()
         self.init_adjustments()
         self.init_event_filter()
+        self.init_web_server()
+        self.init_graphics()
         # initialize widget states
         self.w.stackedWidget_gcode.setCurrentIndex(0)
-        self.w.btn_dimensions.setChecked(True)
         self.w.page_buttonGroup.buttonClicked.connect(self.main_tab_changed)
         self.w.preset_buttonGroup.buttonClicked.connect(self.preset_jograte)
         self.use_mpg_changed(self.w.chk_use_mpg.isChecked())
@@ -355,7 +308,6 @@ class HandlerClass:
         if not "A" in self.axis_list:
             for item in self.axis_a_list:
                 self.w[item].hide()
-            self.w.axis_a_height.hide()
         # set validators for lineEdit widgets
         if INFO.MACHINE_IS_METRIC:
             regex = QRegExp(r'^((\d{1,4}(\.\d{1,3})?)|(\.\d{1,3}))$')
@@ -366,31 +318,37 @@ class HandlerClass:
             self.w['lineEdit_' + val].setValidator(valid)
         self.w.lineEdit_spindle_raise.setValidator(QIntValidator(0, 99))
         self.w.lineEdit_max_power.setValidator(QIntValidator(0, 9999))
-        self.w.lineEdit_max_volts.setValidator(QIntValidator(0, 999))
-        self.w.lineEdit_max_amps.setValidator(QIntValidator(0, 99))
         self.w.lineEdit_tool_in_spindle.setValidator(QIntValidator(0, 99999))
         # set unit labels according to machine mode
         self.w.lbl_machine_units.setText("METRIC" if INFO.MACHINE_IS_METRIC else "IMPERIAL")
         for i in self.unit_label_list:
             self.w['lbl_' + i].setText(self.machine_units)
-        for i in self.unit_speed_list:
+        for i in ["search_vel_units", "probe_vel_units"]:
             self.w['lbl_' + i].setText(self.machine_units + "/MIN")
         self.w.setWindowFlags(Qt.FramelessWindowHint)
         # instantiate color highlighter for machine log
         self.highlighter = Highlighter(self.w.machine_log.logText)
 
         # connect all signals to corresponding slots
-        connect = Connections(self, self.w)
+        connect = Connections(self)
         self.w.tooloffsetview.tablemodel.layoutChanged.connect(self.get_checked_tools)
         self.w.tooloffsetview.tablemodel.dataChanged.connect(lambda new, old, roles: self.tool_data_changed(new, old, roles))
         self.w.statusbar.messageChanged.connect(self.statusbar_changed)
         self.w.stackedWidget_gcode.currentChanged.connect(self.gcode_widget_changed)
         self.w.lineEdit_tool_in_spindle.returnPressed.connect(self.tool_edit_finished)
-        self.w.spindle_power.role_changed.connect(self.spindle_role_changed)
+        for item in self.remap_parms:
+            widget = self.w[f'lineEdit_{item}']
+            widget.returnPressed.connect(lambda i=item: self.input_changed(i))
 
     #############################
     # SPECIAL FUNCTIONS SECTION #
     #############################
+
+    def init_m6_remap(self):
+        self.auto_touchoff_changed(self.w.chk_auto_touchoff.isChecked())
+        for item in self.remap_parms:
+            val = self.w[f'lineEdit_{item}'].text()
+            ACTION.CALL_MDI(f'#<_{item}> = {val}')
 
     def init_pins(self):
         # spindle control pins
@@ -407,6 +365,8 @@ class HandlerClass:
         QHAL.newpin("eoffset-count", Qhal.HAL_S32, Qhal.HAL_OUT)
         pin = QHAL.newpin("eoffset-value", Qhal.HAL_FLOAT, Qhal.HAL_IN)
         pin.value_changed.connect(self.eoffset_value_changed)
+        # Z level compensation
+        QHAL.newpin("comp_enable", Qhal.HAL_BIT, Qhal.HAL_OUT)
         # MPG axis select pins
         pin = QHAL.newpin("axis-select-x", Qhal.HAL_BIT, Qhal.HAL_IN)
         pin.value_changed.connect(self.show_selected_axis)
@@ -431,6 +391,7 @@ class HandlerClass:
 
         self.h['runtime-start'] = False
         self.h['runtime-pause'] = False
+        self.h['comp_enable'] = False
 
     def init_preferences(self):
         if not self.w.PREFS_:
@@ -458,8 +419,6 @@ class HandlerClass:
         for spindle in self.settings_spindle:
             spindle.setText(self.w.PREFS_.getpref(spindle.objectName(), '10', str, 'CUSTOM_FORM_ENTRIES'))
         self.max_spindle_power = int(self.w.lineEdit_max_power.text())
-        self.max_spindle_volts = int(self.w.lineEdit_max_volts.text())
-        self.max_spindle_amps = int(self.w.lineEdit_max_amps.text())
         # all remaining fields
         self.last_loaded_program = self.w.PREFS_.getpref('last_loaded_file', None, str,'BOOK_KEEPING')
         self.reload_tool = self.w.PREFS_.getpref('Tool to load', 0, int,'CUSTOM_FORM_ENTRIES')
@@ -490,22 +449,28 @@ class HandlerClass:
         self.tool_db.closing_cleanup__()
 
     def init_graphics(self):
-        from lib.vtk_graphics import VTKGraphics
-        self.graphics = VTKGraphics(self)
-        self.graphics.setObjectName("vtkgraphics")
-        self.w.layout_graphics.insertWidget(0, self.graphics)
-        self.w.chk_inhibit_selection.hide()
-        self.w.btn_bounds.clicked.connect(lambda state: self.graphics.showProgramBounds(state))
-        self.w.btn_alpha_mode.clicked.connect(lambda state: self.graphics.set_alpha_mode(state))
-        self.w.btn_clear_path.pressed.connect(self.graphics.clear_live_plotter)
-        self.w.btn_zoom_in.pressed.connect(self.graphics.zoomin)
-        self.w.btn_zoom_out.pressed.connect(self.graphics.zoomout)
-        self.w.btn_dimensions.clicked.connect(lambda state: self.graphics.showDimensions(state))
-        self.w.btn_view_x.clicked.connect(lambda: self.graphics.setview('x'))
-        self.w.btn_view_y.clicked.connect(lambda: self.graphics.setview('y'))
-        self.w.btn_view_z.clicked.connect(lambda: self.graphics.setview('z'))
-        self.w.btn_view_p.clicked.connect(lambda: self.graphics.setview('p'))
-        self.graphics._hal_init()
+        self.w.vtk.init_vtkmodules()
+        # view settings
+        self.w.vtk.showDimensions(False)
+        self.w.vtk.showProgramBounds(False)
+        self.w.vtk.showMachineBounds(True)
+        self.w.vtk.setview('p')
+        self.w.vtk.set_inhibit_selection(self.w.chk_inhibit_selection.isChecked())
+        # button connections
+        self.w.btn_right.pressed.connect(self.toggle_macros)
+        self.w.btn_left.pressed.connect(self.toggle_views)
+        self.w.btn_machine.clicked.connect(lambda state: self.w.vtk.showMachineBounds(state))
+        self.w.btn_bounds.clicked.connect(lambda state: self.w.vtk.showProgramBounds(state))
+        self.w.btn_dimensions.clicked.connect(lambda state: self.w.vtk.showDimensions(state))
+        self.w.btn_alpha_mode.clicked.connect(lambda state: self.w.vtk.set_alpha_mode(state))
+        self.w.btn_clear_path.pressed.connect(self.w.vtk.clear_live_plotter)
+        self.w.btn_zoom_in.pressed.connect(self.w.vtk.zoomin)
+        self.w.btn_zoom_out.pressed.connect(self.w.vtk.zoomout)
+        self.w.btn_view_x.clicked.connect(lambda: self.w.vtk.setview('x'))
+        self.w.btn_view_y.clicked.connect(lambda: self.w.vtk.setview('y'))
+        self.w.btn_view_z.clicked.connect(lambda: self.w.vtk.setview('z'))
+        self.w.btn_view_p.clicked.connect(lambda: self.w.vtk.setview('p'))
+        self.w.vtk._hal_init()
 
     def init_widgets(self):
         self.w.main_tab_widget.setCurrentIndex(TAB_MAIN)
@@ -516,8 +481,8 @@ class HandlerClass:
         self.w.adj_spindle_ovr.setValue(100)
         self.w.chk_override_limits.setChecked(False)
         self.w.chk_override_limits.setEnabled(False)
-        self.w.lbl_home_x.setText(INFO.get_error_safe_setting('JOINT_0', 'HOME',"50"))
-        self.w.lbl_home_y.setText(INFO.get_error_safe_setting('JOINT_1', 'HOME',"50"))
+        self.w.lineEdit_home_x.setText(INFO.get_error_safe_setting('JOINT_0', 'HOME',"50"))
+        self.w.lineEdit_home_y.setText(INFO.get_error_safe_setting('JOINT_1', 'HOME',"50"))
         self.w.lbl_max_velocity.setText(f"{self.max_linear_velocity}")
         self.w.lbl_max_angular.setText(f"{self.max_angular_velocity}")
         self.w.lineEdit_min_rpm.setText(f"{self.min_spindle_rpm}")
@@ -530,7 +495,7 @@ class HandlerClass:
         self.w.gcode_viewer.readOnlyMode()
         # set calculator mode for menu buttons
         for i in ("x", "y", "z"):
-            self.w["axistoolbutton_" + i].set_dialog_code('CALCULATOR')
+            self.w["axistoolbutton_" + i].set_dialog_code(self.dialog_code)
         # disable mouse wheel events on comboboxes
         self.w.cmb_program_history.wheelEvent = lambda event: None
         self.w.jogincrements_linear.wheelEvent = lambda event: None
@@ -574,36 +539,45 @@ class HandlerClass:
         # default styles for feedrate and statusbar
         self.feedrate_style = self.w.lbl_feedrate.styleSheet()
         self.statusbar_style = self.w.statusbar.styleSheet()
+        # sliding macro button frame
+        self.macros_open = False
+        self.views_open = False
+        self.w.btn_left.setText("▶")
+        self.w.btn_right.setText("◀")
+        self.w.frm_view_buttons.setMaximumWidth(0)
+        self.w.frm_macro_buttons.setMaximumWidth(0)
+        self.left_animation = QPropertyAnimation(self.w.frm_view_buttons, b"maximumWidth")
+        self.left_animation.setDuration(300)
+        self.left_animation.setEasingCurve(QEasingCurve.InOutCubic)
+        self.right_animation = QPropertyAnimation(self.w.frm_macro_buttons, b"maximumWidth")
+        self.right_animation.setDuration(300)
+        self.right_animation.setEasingCurve(QEasingCurve.InOutCubic)
 
     def init_gcode_editor(self):
-        self.gcode_editor = Gcode_Editor(self)
-        self.w.layout_gcode_editor.addWidget(self.gcode_editor)
+        self.w.gcodeeditor.editor.setCaretForegroundColor(Qt.yellow)
+        self.w.gcodeeditor.gCodeLexerAction.setVisible(False)
+        self.w.gcodeeditor.pythonLexerAction.setVisible(False)
+        # instance patch editor actions
+        self.w.gcodeeditor.exitAction.disconnect()
+        self.w.gcodeeditor.openReturn = self.openReturn
+        self.w.gcodeeditor.saveReturn = self.saveReturn
+        self.w.gcodeeditor.exitAction.triggered.connect(self.exitCall)
 
     def init_file_manager(self):
-        self.w.filemanager_media.table.setShowGrid(False)
-        self.w.filemanager_media.chk_restricted.setChecked(True)
-        self.w.filemanager_media.onMediaClicked()
-        self.w.filemanager_media.loadButton.hide()
-        self.w.filemanager_media.copy_control.hide()
+        self.w.filemanager_usb.table.setShowGrid(False)
+        self.w.filemanager_usb.chk_restricted.setChecked(True)
+        self.w.filemanager_usb.onMediaClicked()
+        self.w.filemanager_usb.loadButton.hide()
+        self.w.filemanager_usb.copy_control.hide()
         self.w.filemanager_user.table.setShowGrid(False)
         self.w.filemanager_user.chk_restricted.setChecked(True)
         self.w.filemanager_user.onUserClicked()
         self.w.filemanager_user.loadButton.hide()
         self.w.filemanager_user.copy_control.hide()
         self.w.filemanager_user.table.clicked.connect(lambda index: self.select_filemanager(True))
-        self.w.filemanager_media.table.clicked.connect(lambda index: self.select_filemanager(False))
+        self.w.filemanager_usb.table.clicked.connect(lambda index: self.select_filemanager(False))
         # set initial active file manager
         self.filemanager = self.w.filemanager_user
-        # create the input dialog for non keyboard input
-        self.input_dialog = QInputDialog()
-        self.input_dialog.setModal(False)
-        self.input_dialog.setWindowModality(Qt.NonModal)
-        self.input_dialog.accepted.connect(self.on_input_accepted)
-        # create message box for file control buttons
-        self.messagebox = QMessageBox()
-        self.messagebox.setWindowModality(Qt.NonModal)
-        self.messagebox.setStandardButtons(QMessageBox.No | QMessageBox.Yes)
-        self.messagebox.buttonClicked.connect(self.do_file_copy)
 
     def init_tooldb(self):
         from lib.tool_db import Tool_Database
@@ -620,14 +594,12 @@ class HandlerClass:
     def init_probe(self):
         probe = INFO.get_error_safe_setting('PROBE', 'USE_PROBE', 'none').lower()
         if probe == 'versaprobe':
-            LOG.info("Using Versa Probe")
             from qtvcp.widgets.versa_probe import VersaProbe
 #            from lib.versa_probe import VersaProbe
             self.probe = VersaProbe()
             self.probe.setObjectName('versaprobe')
             self.w.btn_probe.setProperty('title', 'VERSA PROBE')
         elif probe == 'basicprobe':
-            LOG.info("Using Basic Probe")
             from lib.basic_probe import BasicProbe
             self.probe = BasicProbe(self)
             self.probe.setObjectName('basicprobe')
@@ -646,9 +618,8 @@ class HandlerClass:
         self.w.mdi_keyboard.setVisible(self.w.chk_use_mdi_keyboard.isChecked())
         
     def init_utils(self):
-        from lib.setup_utils import Setup_Utils
-        self.setup_utils = Setup_Utils(self.w, self)
-        self.setup_utils.init_utils()
+        from lib.plugin_manager import Setup_Utils
+        self.setup_utils = Setup_Utils(self)
         self.util_list = self.setup_utils.get_util_list()
         # designer doesn't allow adding buttons not derived from QAbstractButton class
         self.w.page_buttonGroup.addButton(self.w.btn_utils)
@@ -659,30 +630,13 @@ class HandlerClass:
             menu.addAction(action)
         self.w.btn_utils.setMenu(menu)
         # if z level compensation wasn't installed, disable the button
+        if not QHAL.hal.component_exists("compensate"):
+            self.add_status("Z level compensation HAL component not loaded", ERROR)
+            self.w.btn_enable_comp.setText("Z COMP\nDISABLED")
+            self.w.btn_enable_comp.setEnabled(False)
         if self.zlevel is None:
             self.w.btn_enable_comp.setEnabled(False)
         self.get_next_available()
-
-    def init_about(self):
-        self.about_dict = {'vfd'          : 'USING A VFD',
-                           'spindle_pause': 'SPINDLE PAUSE',
-                           'mpg'          : 'USING A MPG',
-                           'touchoff'     : 'TOOL TOUCHOFF',
-                           'runfromline'  : 'RUN FROM LINE',
-                           'stylesheets'  : 'STYLESHEETS',
-                           'rotary_axis'  : 'ROTARY AXIS',
-                           'custom'       : 'CUSTOM PANELS'}
-        self.w.page_buttonGroup.addButton(self.w.btn_about)
-        menu = QMenu(self.w.btn_about)
-        for key, val in self.about_dict.items():
-            action =  QAction(val, self.w.btn_about)
-            action.triggered.connect(lambda checked, t=key: self.update_about_button(t))
-            menu.addAction(action)
-        self.w.btn_about.setMenu(menu)
-        self.web_view_about = QWebEngineView()
-        self.web_page_about = WebPage()
-        self.web_view_about.setPage(self.web_page_about)
-        self.w.layout_about_pages.addWidget(self.web_view_about)
 
     def init_event_filter(self):
         self.default_line_style = self.w.lineEdit_work_height.styleSheet()
@@ -699,24 +653,44 @@ class HandlerClass:
         self.event_filter.set_parms(('_handler_', False))
         self.event_filter.set_dialog_mode(self.w.chk_use_handler_calculator.isChecked())
 
+    def init_web_server(self):
+        from lib.monitor_server import MonitorServer
+        self.monitor_status = MonitorStatus(self)
+        self.monitor_server = MonitorServer(self.monitor_status, port=8080)
+        self.monitor_server.start()
+
     def init_macros(self):
         # macro buttons defined in INI under [MDI_COMMAND_LIST]
         for i in range(20):
             button = self.w[f'btn_macro{i}']
-            key = button.property('ini_mdi_key')
-            if key == '' or INFO.get_ini_mdi_command(key) is None:
-                # fallback to legacy nth line
-                key = button.property('ini_mdi_number')
-            try:
-                code = INFO.get_ini_mdi_command(key)
-                if code is None: raise Exception
-                self.macros_defined.append(i)
-            except:
+            key = f'MACRO{i}'
+            cmd = INFO.get_ini_mdi_command(key)
+            if cmd is None:
                 button.setText('')
                 button.setEnabled(False)
-        self.w.group1_macro_buttons.hide()
-        self.w.group2_macro_buttons.hide()
-        self.show_macros_clicked(self.w.btn_show_macros.isChecked())
+            else:
+                label = INFO.get_ini_mdi_label(key)
+                lbl = label.replace(r'\n', '\n')
+                tip = cmd.replace(';','\n')
+                tooltip = f'MDI CMD MACRO{key}:\n{tip}'
+                button.setText(lbl)
+                button.setToolTip(tooltip)
+                button.setProperty('ini_mdi_cmd', cmd)
+                self.macros_defined.append(i)
+                button.pressed.connect(lambda i=i: self.macro_btn_pressed(i))
+        # check if any macros are in groups 1 or 2. If not, hide that group.
+        show = False
+        for i in range(10):
+            if i in self.macros_defined:
+                show = True
+                break
+        self.w.group1_macro_buttons.setVisible(show)
+        show = False
+        for i in range(10, 20):
+            if i in self.macros_defined:
+                show = True
+                break
+        self.w.group2_macro_buttons.setVisible(show)
 
     def init_adjustments(self):
         # modify the status adjustment bars to have custom icons
@@ -803,7 +777,9 @@ class HandlerClass:
         lower_code = bool(message.get('ID') == '_wait_to_lower_')
         handler_code = bool(message.get('ID') == '_handler_')
         delete_code = bool(message.get('ID') == '_delete_')
-        save_gcode_code = bool(message.get('ID') == '_save_gcode_')
+        rename_code = bool(message.get('ID') == '_rename_')
+        file_code = bool(message.get('ID') == '_new_file_')
+        folder_code = bool(message.get('ID') == '_new_folder_')
         if unhome_code and name == 'MESSAGE' and rtn is True:
             ACTION.SET_MACHINE_UNHOMED(-1)
             self.add_status("All axes unhomed")
@@ -817,16 +793,18 @@ class HandlerClass:
             self.pause_timer.start(1000)
         elif delete_code and name == 'MESSAGE':
             if rtn is True:
-                send2trash(self.deleteFile)
-                self.filemanager.textLine.clear()
-                self.add_status(f"{self.deleteFile} sent to Trash")
+                self.deleteReturn()
             else:
                 self.add_status(f"{self.deleteFile} not deleted")
-        elif save_gcode_code and name == 'SAVE':
+        elif rename_code and name == self.kbd_code:
             if rtn is None: return
-            saved = ACTION.SAVE_PROGRAM(self.w.gcodeeditor.editor.text(), rtn)
-            if saved is not None:
-                self.w.gcodeeditor.editor.setModified(False)
+            os.rename(self.source_file, rtn)
+        elif file_code and name == self.kbd_code:
+            if rtn is None: return
+            self.fileReturn(rtn)
+        elif folder_code and name == self.kbd_code:
+            if rtn is None: return
+            self.folderReturn(rtn)
         elif handler_code and name == self.dialog_code:
             obj.setStyleSheet(self.default_line_style)
             if rtn is None: return
@@ -840,6 +818,9 @@ class HandlerClass:
             if rtn is None: return
             LOG.debug(f'message return: {message}')
             obj.setText(rtn)
+            name = obj.objectName().replace('lineEdit_', '')
+            if name in self.remap_parms:
+                self.input_changed(name)
         elif handler_code and name == self.tool_code:
             if rtn is None: return
             self.w.lineEdit_tool_in_spindle.setText(str(rtn))
@@ -857,43 +838,15 @@ class HandlerClass:
             ACTION.CALL_MDI_WAIT(f'M61 Q{tool} G43', mode_return=True)
         self.w.lineEdit_tool_in_spindle.clearFocus()
 
-    def spindle_role_changed(self, role):
-        self.spindle_role = role
-        if role == 'power':
-            self.w.spindle_power.setMaximum(self.max_spindle_power)
-            self.w.spindle_power.setFormat("POWER %p%")
-        elif role == 'volts':
-            self.w.spindle_power.setMaximum(self.max_spindle_volts)
-        elif role == 'amps':
-            self.w.spindle_power.setMaximum(self.max_spindle_amps)
-        self.spindle_pwr_changed()
-
     def spindle_pwr_changed(self):
-        if self.spindle_role == 'power':
-            # V x I x PF x sqrt(3)
-            # this calculation assumes a power factor of 0.8
-            power = int(self.h['spindle-volts'] * self.h['spindle-amps'] * 1.386)
-            if power > self.max_spindle_power:
-                self.w.spindle_power.setFormat('OUT OF RANGE')
-                self.w.spindle_power.setValue(0)
-            else:
-                self.w.spindle_power.setValue(power)
-        elif self.spindle_role == 'volts':
-            volts = self.h['spindle-volts']
-            if volts > self.max_spindle_volts:
-                self.w.spindle_power.setFormat('OUT OF RANGE')
-                self.w.spindle_power.setValue(0)
-            else:
-                self.w.spindle_power.setFormat(f'{volts:.1f} VOLTS')
-                self.w.spindle_power.setValue(int(volts))
-        elif self.spindle_role == 'amps':
-            amps = self.h['spindle-amps']
-            if amps > self.max_spindle_amps:
-                self.w.spindle_power.setFormat('OUT OF RANGE')
-                self.w.spindle_power.setValue(0)
-            else:
-                self.w.spindle_power.setFormat(f'{amps:.1f} AMPS')
-                self.w.spindle_power.setValue(int(amps))
+        # V x I x PF x sqrt(3)
+        # this calculation assumes a power factor of 0.8
+        power = self.h['spindle-volts'] * self.h['spindle-amps'] * 1.386
+        pc = int((power / self.max_spindle_power) * 100)
+        if pc >= 100:
+            self.w.spindle_power.setValue(100)
+        else:
+            self.w.spindle_power.setValue(pc)
 
     def eoffset_value_changed(self, data):
         if not self.w.btn_pause_spindle.isChecked() and not self.w.btn_enable_comp.isChecked():
@@ -919,31 +872,34 @@ class HandlerClass:
     def tool_changed(self, tool):
         self.current_tool = tool
         self.w.lineEdit_tool_in_spindle.setText(str(tool))
-        LOG.debug(f"Tool changed to {self.current_tool}")
-        data = self.tool_db.get_tool_data(tool)
-        if data is None:
-            self.add_status("Failed to retrieve data from database", ERROR)
-            return
-        maxz = data['length']
-        rtime = data['time']
-        icon = data['icon']
-        if icon is None or icon == "undefined":
-            self.w.lbl_tool_image.setText("Image\nUndefined")
-        else:
-            icon_file = os.path.join(PATH.CONFIGPATH, 'tool_icons/' + icon)
-            self.w.lbl_tool_image.setPixmap(QPixmap(icon_file))
-        text = "---" if maxz is None else str(maxz)
-        self.w.lineEdit_max_depth.setText(text)
-        self.pgm_start_time = rtime
-        self.w.lineEdit_acc_time.setText(f'{rtime:.1f}')
+        LOG.debug(f"Tool changed to {tool}")
+        self.update_tool_info(tool)
 
-    def file_loaded(self, filename):
+    def program_loaded(self, filename):
         if filename is not None:
             self.add_status(f"Loaded file {filename}")
             self.w.progressBar.reset()
             self.last_loaded_program = filename
             self.current_loaded_program = filename
             self.w.lineEdit_runtime.setText("00:00:00")
+            idx = self.w.cmb_program_history.findText(filename)
+            if idx == -1:
+                self.w.cmb_program_history.addItem(filename)
+                self.w.cmb_program_history.setCurrentIndex(self.w.cmb_program_history.count() - 1)
+            else:
+                self.w.cmb_program_history.setCurrentIndex(idx)
+            if self.zlevel is not None:
+                # determine if loaded file is to be Z compensated
+                comp_file = self.zlevel.program_loaded(filename)
+                self.comp_enable = False if comp_file is None else True
+                if self.w.btn_enable_comp.isChecked() and comp_file is None:
+                    self.add_status(f"No compensation file for {filename}", WARNING)
+                if self.w.btn_enable_comp.isChecked() and self.comp_enable:
+                    self.add_status(f"Z level compensation ON using {comp_file}")
+                    self.h['comp_enable'] = True
+                else:
+                    self.h['comp_enable'] = False
+                    self.h['eoffset-count'] = 0
         else:
             self.add_status("Filename not valid", WARNING)
 
@@ -979,14 +935,13 @@ class HandlerClass:
                 ACTION.CALL_MDI(command)
             if self.last_loaded_program is not None and self.w.chk_reload_program.isChecked():
                 if os.path.isfile(self.last_loaded_program):
-                    self.w.cmb_program_history.addItem(self.last_loaded_program)
-                    self.w.cmb_program_history.setCurrentIndex(self.w.cmb_program_history.count() - 1)
                     ACTION.OPEN_PROGRAM(self.last_loaded_program)
         ACTION.SET_MANUAL_MODE()
         self.w.manual_mode_button.setChecked(True)
         # enable camera buttons according to SETTINGS
         self.w.btn_ref_camera.setEnabled(self.w.chk_use_camera.isChecked())
         self.add_status("All axes homed")
+        self.init_m6_remap()
 
     def not_all_homed(self, obj, unhomed):
         self.w.btn_home_all.setText("HOME\nALL")
@@ -1026,9 +981,9 @@ class HandlerClass:
             'tools': "Tool order:", 'g0': "Rapid distance:",
             'g1': "Feed distance:", 'g': "Total distance:",
             'run': "Run time:",'machine_unit_sys':"Machine Unit System:",
-            'x': "X bounds:",'x_zero_rxy':'X @ Zero Rotation:',
-            'y': "Y bounds:",'y_zero_rxy':'Y @ Zero Rotation:',
-            'z': "Z bounds:",'z_zero_rxy':'Z @ Zero Rotation:',
+            'x': "X bounds:",'x_rxy':'X Rotated:',
+            'y': "Y bounds:",'y_rxy':'Y Rotated:',
+            'z': "Z bounds:",'z_rxy':'Z Rotated:',
             'a': "A bounds:", 'b': "B bounds:",
             'c': "C bounds:",'toollist':'Tool Change List:',
             'gcode_units':"Gcode Units:"
@@ -1087,18 +1042,15 @@ class HandlerClass:
             self.w.btn_main.setChecked(True)
             self.w.groupBox_preview.setTitle(self.w.btn_main.property("title"))
             return
-        if index == TAB_PROBE:
+        if index == TAB_FILE:
+            self.w.stackedWidget_file.setCurrentIndex(0)
+        elif index == TAB_PROBE:
             spindle_inhibit = self.w.chk_inhibit_spindle.isChecked()
             ACTION.CALL_MDI_WAIT("M5", mode_return=True)
         elif index == TAB_UTILS:
             if title == "UTILITIES":
                 self.add_status('Select a utility from the drop down list')
                 self.w.btn_utils.setChecked(False)
-                return
-        elif index == TAB_ABOUT:
-            if title == 'ABOUT':
-                self.add_status('Select an ABOUT topic from the drop down list')
-                self.w.btn_about.setChecked(False)
                 return
         self.w.mdihistory.MDILine.spindle_inhibit(spindle_inhibit)
         self.h['spindle-inhibit'] = spindle_inhibit
@@ -1130,11 +1082,42 @@ class HandlerClass:
 
     # preview frame
     def show_dimensions(self, state):
-        if hasattr(self.graphics, 'show_extents_option'):
-            self.graphics.show_extents_option = state
-            self.graphics.clear_live_plotter()
+        if hasattr(self.w.vtk, 'show_extents_option'):
+            self.w.vtk.show_extents_option = state
+            self.w.vtk.clear_live_plotter()
         else:
-            self.graphics.showDimensions(state)
+            self.w.vtk.showDimensions(state)
+
+    def toggle_views(self):
+        if self.views_open:
+            self.left_animation.setStartValue(self.w.frm_view_buttons.width())
+            self.left_animation.setEndValue(0)
+            self.w.btn_left.setText("▶")
+            self.views_open = False
+        else:
+            self.left_animation.setStartValue(self.w.frm_view_buttons.width())
+            self.left_animation.setEndValue(100)
+            self.w.btn_left.setText("◀")
+            self.views_open = True
+        self.left_animation.start()
+
+    def toggle_macros(self):
+        if self.macros_open:
+            self.right_animation.setStartValue(self.w.frm_macro_buttons.width())
+            self.right_animation.setEndValue(0)
+            self.w.btn_right.setText("◀")
+            self.macros_open = False
+        else:
+            self.right_animation.setStartValue(self.w.frm_macro_buttons.width())
+            self.right_animation.setEndValue(200)
+            self.w.btn_right.setText("▶")
+            self.macros_open = True
+        self.right_animation.start()
+            
+    def macro_btn_pressed(self, idx):
+        cmds = self.w[f'btn_macro{idx}'].property('ini_mdi_cmd').split(';')
+        for cmd in cmds:
+            ACTION.CALL_MDI_WAIT(cmd, time=30, mode_return=True)
 
     # gcode frame
     def cmb_program_history_activated(self):
@@ -1147,7 +1130,7 @@ class HandlerClass:
                     'MORE': "Program is already loaded. Reload?",
                     'NONBLOCKING': True,
                     'TYPE': 'YESNO'}
-            ACTION.CALL_DIALOG(mess)
+            STATUS.emit('dialog-request', mess)
         else:
             ACTION.OPEN_PROGRAM(filename)
 
@@ -1175,7 +1158,7 @@ class HandlerClass:
                     'MESSAGE' : info,
                     'LINE' : self.start_line,
                     'NONBLOCKING' : True}
-            ACTION.CALL_DIALOG(mess)
+            STATUS.emit('dialog-request', mess)
         self.add_status(f"Started {self.current_loaded_program} from line {self.start_line}")
         self.h['runtime-start'] = True
 
@@ -1192,10 +1175,11 @@ class HandlerClass:
         self.w.btn_pause.setEnabled(True)
         self.add_status("Program manually aborted")
         ACTION.ensure_mode(linuxcnc.MODE_MANUAL)
-        if self.current_tool > 0:
+        tool = int(self.w.lineEdit_tool_in_spindle.text())
+        if tool > 0:
             tis = float(self.w.lineEdit_acc_time.text())
-            if self.tool_db.update_tool_time(self.current_tool, tis) is None:
-                self.add_status(f'Update tool {self.current_tool} time in spindle error', WARNING)
+            if self.tool_db.update_tool_time(tool, tis) is None:
+                self.add_status(f'Update tool {tool} time in spindle error', WARNING)
 
     def btn_pause_pressed(self):
         if STATUS.is_on_and_idle(): return
@@ -1232,7 +1216,7 @@ class HandlerClass:
                 'NONBLOCKING': True,
                 'MORE': info,
                 'TYPE': 'OK'}
-        ACTION.CALL_DIALOG(mess)
+        STATUS.emit('dialog-request', mess)
 
     def btn_pause_spindle_clicked(self, state):
         if not state and not self.w.btn_enable_comp.isChecked():
@@ -1242,23 +1226,16 @@ class HandlerClass:
 
     def btn_enable_comp_clicked(self, state):
         if state:
-            fname = self.zlevel.get_map(True)
-            if fname is None:
-                self.add_status(f"No compensation file for {self.current_loaded_program}", WARNING)
-                self.w.btn_enable_comp.setText("Z COMP\nDISABLED")
-                return
-            if not QHAL.hal.component_exists("compensate"):
-                self.add_status("Z level compensation HAL component not loaded", ERROR)
-                self.w.btn_enable_comp.setText("Z COMP\nDISABLED")
-                return
-            self.add_status(f"Z level compensation ON using {fname}")
+            self.add_status(f"Z level compensation ENABLED")
             self.w.btn_enable_comp.setText("Z COMP\nENABLED")
+            self.h['comp_enable'] = self.comp_enable
         else:
-            self.zlevel.get_map(False)
-            self.h['eoffset-count'] = 0
-            self.add_status("Z level compensation OFF")
+            self.add_status("Z level compensation DISABLED")
             if not self.w.btn_pause_spindle.isChecked():
                 self.w.lineEdit_eoffset.setText("DISABLED")
+            self.w.btn_enable_comp.setText("Z COMP\nDISABLED")
+            self.h['comp_enable'] = False
+            self.h['eoffset-count'] = 0
 
     # jogging frame
     def jog_xy_pressed(self, btn):
@@ -1319,9 +1296,9 @@ class HandlerClass:
     # TOOL frame
     def choose_tool(self):
         self.w.lineEdit_tool_in_spindle.clearFocus()
-        mess = {'NAME' : 'TOOLCHOOSER',
+        mess = {'NAME' : self.tool_code,
                 'ID' : '_toolchooser_'}
-        ACTION.CALL_DIALOG(mess)
+        STATUS.emit('dialog-request', mess)
 
     def btn_touchoff_pressed(self):
         if STATUS.get_current_tool() == 0:
@@ -1340,24 +1317,6 @@ class HandlerClass:
             self.add_status("Invalid touchoff method specified", WARNING)
 
     # DRO frame
-    def show_macros_clicked(self, state):
-        if state and not STATUS.is_auto_mode():
-            show = False
-            for i in range(10):
-                if self.w[f'btn_macro{i}'].text() != '':
-                    show = True
-                self.w[f'btn_macro{i}'].setEnabled(bool(self.w[f'btn_macro{i}'].text() != ''))
-            self.w.group1_macro_buttons.setVisible(show)
-            show = False
-            for i in range(10, 20):
-                if self.w[f'btn_macro{i}'].text() != '':
-                    show = True
-                self.w[f'btn_macro{i}'].setEnabled(bool(self.w[f'btn_macro{i}'].text() != ''))
-            self.w.group2_macro_buttons.setVisible(show)
-        else:
-            self.w.group1_macro_buttons.hide()
-            self.w.group2_macro_buttons.hide()
-
     def systemtoolbutton_toggled(self, state):
         if state:
             STATUS.emit('dro-reference-change-request', 1)
@@ -1374,7 +1333,7 @@ class HandlerClass:
                     'MORE': "Unhome All Axes?",
                     'NONBLOCKING': True,
                     'TYPE': 'YESNO'}
-            ACTION.CALL_DIALOG(mess)
+            STATUS.emit('dialog-request', mess)
 
     def btn_rewind_clicked(self):
         stat = linuxcnc.stat()
@@ -1392,25 +1351,12 @@ class HandlerClass:
 
     def btn_goto_location_clicked(self):
         dest = self.w.sender().property('location')
-        man_mode = True if STATUS.is_man_mode() else False
         if dest == 'zero':
-            x = 0
-            y = 0
-        elif dest == 'home':
-            x = self.w.lbl_home_x.text()
-            y = self.w.lbl_home_y.text()
-        elif dest == 'sensor':
-            x = self.w.lineEdit_sensor_x.text()
-            y = self.w.lineEdit_sensor_y.text()
-        else:
-            return
-        if dest == 'zero':
-            cmd = ['G90', 'G53 G0 Z0', f'G0 X{x} Y{y}']
-        else:
-            cmd = ['G90', 'G53 G0 Z0', f'G53 G0 X{x} Y{y}']
-        ACTION.CALL_BACKGROUND_MDI(cmd, label=f'Moving to {dest}', timeout=30)
-        if man_mode:
-            ACTION.SET_MANUAL_MODE()
+            ACTION.CALL_MDI_WAIT('G90 G53 G0 Z0\nG0 X0 Y0', time=30, mode_return=True)
+        elif dest in ['home', 'sensor']:
+            x = self.w[f'lineEdit_{dest}_x'].text()
+            y = self.w[f'lineEdit_{dest}_y'].text()
+            ACTION.CALL_MDI_WAIT(f'G90 G53 G0 Z0\nG53 G0 X{x} Y{y}', time=30, mode_return=True)
 
     def btn_ref_laser_clicked(self):
         if not self.w.btn_laser_on.isChecked():
@@ -1481,11 +1427,11 @@ class HandlerClass:
     # FILE tab
     def copy_file(self):
         if self.w.sender() == self.w.btn_copy_right:
-            source = self.w.filemanager_media.getCurrentSelected()
+            source = self.w.filemanager_usb.getCurrentSelected()
             target = self.w.filemanager_user.getCurrentSelected()
         elif self.w.sender() == self.w.btn_copy_left:
             source = self.w.filemanager_user.getCurrentSelected()
-            target = self.w.filemanager_media.getCurrentSelected()
+            target = self.w.filemanager_usb.getCurrentSelected()
         else:
             return
         if source[1] is False:
@@ -1496,19 +1442,9 @@ class HandlerClass:
             self.destination_file = os.path.join(os.path.dirname(target[0]), os.path.basename(source[0]))
         else:
             self.destination_file = os.path.join(target[0], os.path.basename(source[0]))
-
-        if os.path.isfile(self.destination_file) or os.path.isdir(self.destination_file):
-            self.messagebox.setWindowTitle('Copy File')
-            self.messagebox.setIcon(QMessageBox.Question)
-            self.messagebox.setText(f'{self.destination_file} exists - overwrite?')
-            self.messagebox.show()
-        else:
-            self.do_file_copy(self.messagebox.button(QMessageBox.Yes))
+        self.filemanager.copyChecks(self.source_file, self.destination_file)
 
     def load_file(self):
-        if self.w.btn_edit_gcode.isChecked():
-            self.add_status('Cannot load file while GCode editing is active', WARNING)
-            return
         fname = self.filemanager.getCurrentSelected()
         if fname[1] is False:
             self.add_status("Current selection is not a file", WARNING)
@@ -1519,8 +1455,6 @@ class HandlerClass:
             self.add_status(f"Unknown or invalid filename extension {file_extension}", WARNING)
             return
         if file_extension in ('.ngc', '.nc', '.tap'):
-            self.w.cmb_program_history.addItem(fname)
-            self.w.cmb_program_history.setCurrentIndex(self.w.cmb_program_history.count() - 1)
             ACTION.OPEN_PROGRAM(fname)
             self.w.main_tab_widget.setCurrentIndex(TAB_MAIN)
             self.w.btn_main.setChecked(True)
@@ -1559,75 +1493,102 @@ class HandlerClass:
                 'MORE': info,
                 'TYPE': 'YESNO',
                 'NONBLOCKING': True}
-        ACTION.CALL_DIALOG(mess)
+        STATUS.emit('dialog-request', mess)
+
+    def deleteReturn(self):
+        try:
+            send2trash(self.deleteFile)
+            self.filemanager.textLine.clear()
+            self.add_status(f"{self.deleteFile} sent to Trash")
+        except Exception as e:
+            self.add_status(f"Delete file error: {e}", ERROR)
 
     def rename_file(self):
         fname = self.filemanager.getCurrentSelected()
         title = "Rename File" if fname[1] is True else "Rename Folder"
-        label = "File" if fname[1] is True else "Folder"
         self.source_file = fname[0]
-        self.input_dialog.setWindowTitle(title)
-        self.input_dialog.setLabelText(f"Enter New {label} Name")
-        self.input_dialog.setTextValue(self.source_file)
-        self.input_dialog.show()
+        mess = {'NAME': self.kbd_code,
+                'ID': '_rename_',
+                'PRELOAD': self.source_file,
+                'TITLE': title,
+                'NONBLOCKING': True,
+                'GEONAME': '__keyboard'}
+        STATUS.emit('dialog-request', mess)
+
+    def new_file(self):
+        fname = self.filemanager.getCurrentSelected()
+        if fname[1]:
+            preload = os.path.join(os.path.dirname(fname[0]), 'new.ngc')
+        else:
+            preload = os.path.join(fname[0], 'new.ngc')
+        mess = {'NAME': self.kbd_code,
+                'ID': '_new_file_',
+                'PRELOAD': preload,
+                'TITLE': 'Create New Empty File',
+                'NONBLOCKING': True,
+                'GEONAME': '__keyboard'}
+        STATUS.emit('dialog-request', mess)
+
+    def fileReturn(self, name):
+        with open(name, 'w'):
+            pass
+        self.add_status(f"File {name} created successfully")
 
     def new_folder(self):
-        current_dir = self.filemanager.getCurrentSelected()
-        if current_dir[1] is True:
-            current_path = os.path.dirname(current_dir[0])
+        fname = self.filemanager.getCurrentSelected()
+        if fname[1]:
+            preload = os.path.join(os.path.dirname(fname[0]), 'new_folder')
         else:
-            current_path = current_dir[0]
-        self.input_dialog.setWindowTitle("New Folder")
-        self.input_dialog.setLabelText("Enter New Folder Name")
-        self.input_dialog.setTextValue(current_path)
-        self.input_dialog.show()
+            preload = os.path.join(fname[0], 'new_folder')
+        mess = {'NAME': self.kbd_code,
+                'ID': '_new_folder_',
+                'PRELOAD': preload,
+                'TITLE': 'Create New Folder',
+                'NONBLOCKING': True,
+                'GEONAME': '__keyboard'}
+        STATUS.emit('dialog-request', mess)
+
+    def folderReturn(self, name):
+        try:
+            os.makedirs(name, exist_ok = False)
+            self.add_status(f"Folder {name} created successfully")
+        except Exception as e:
+            self.add_status(f"Folder create error: {e}", WARNING)
 
     def edit_gcode(self):
-        current_dir = self.filemanager.getCurrentSelected()
-        if current_dir[1] is True:
-            self.source_file = current_dir[0]
-        else:
-            self.add_status("Invalid file name", WARNING)
-            return
         self.w.stackedWidget_file.setCurrentIndex(1)
-        self.gcode_editor.editor.setModified(False)
-        self.gcode_editor.openCall(self.source_file)
+        self.w.gcodeeditor.editor.setModified(False)
+        self.w.gcodeeditor.editMode()
+        if self.current_loaded_program:
+            self.w.gcodeeditor.label.setText(f'  Editing {self.current_loaded_program}')
 
     def select_filemanager(self, state):
-        self.filemanager = self.w.filemanager_user if state else self.w.filemanager_media
+        self.filemanager = self.w.filemanager_user if state else self.w.filemanager_usb
 
-    def do_file_copy(self, btn):
-        if btn == self.messagebox.button(QMessageBox.No):
-            self.add_status(f"File {self.source_file} not copied")
-            return
-        try:
-            shutil.copy2(self.source_file, self.destination_file)
-            self.add_status(f"File {self.source_file} copied to {self.destination_file}")
-        except FileNotFoundError:
-            self.add_status(f"File {self.source_file} not found", ERROR)
-        except PermissionError:
-            self.add_status(f"Permission denied for {self.destination_file}", ERROR)
-        except Exception as e:
-            self.add_status(f"Copy file error: {e}", ERROR)
+    # GCode Editor override functions
+    def openReturn(self, fname):
+        filename, file_extension = os.path.splitext(fname)
+        if file_extension in ('.ngc', '.nc', '.tap'):
+            self.w.gcodeeditor.editor.load_text(fname)
+            self.w.gcodeeditor.label.setText(f'  Editing {fname}')
+            self.w.gcodeeditor.editor.setModified(False)
+        else:
+            self.add_status(f"{fname} is not a valid gcode file - not opened")
 
-    def on_input_accepted(self):
-        text = self.input_dialog.textValue()
-        if self.input_dialog.windowTitle() == "Rename File":
-            os.rename(self.source_file, text)
-            self.add_status(f"Renamed file {self.source_file} to {text}")
-        elif self.input_dialog.windowTitle() == "Rename Folder":
-            os.rename(self.source_file, text)
-            self.add_status(f"Renamed folder {self.source_file} to {text}")
-        elif self.input_dialog.windowTitle() == "New Folder":
-            try:
-                os.makedirs(text, exist_ok = False)
-                self.add_status(f"Folder {text} created successfully")
-            except Exception as e:
-                self.add_status(f"Folder create error: {e}", WARNING)
+    def saveReturn(self, fname):
+        saved = ACTION.SAVE_PROGRAM(self.w.gcodeeditor.editor.text(), fname)
+        if saved is not None:
+            self.w.gcodeeditor.editor.setModified(False)
 
-    def on_message_clicked(self, btn):
-            self.do_file_copy()
-                       
+    def exitCall(self):
+        exit_ok = True
+        if self.w.gcodeeditor.editor.isModified():
+            exit_ok = self.w.gcodeeditor.killCheck()
+        if exit_ok:
+            self.w.gcodeeditor.editor.setText('')
+            self.w.gcodeeditor.label.clear()
+            self.w.stackedWidget_file.setCurrentIndex(0)
+
     # TOOL tab
     def tabwidget_tools_changed(self, idx):
         if idx == 0:
@@ -1655,7 +1616,8 @@ class HandlerClass:
         if not tools:
             self.add_status("No tool selected to delete", WARNING)
             return
-        if tools[0] == self.current_tool:
+        tool = int(self.w.lineEdit_tool_in_spindle.text())
+        if tools[0] == tool:
             ACTION.CALL_MDI('M61 Q0 G43', mode_return=True)
         self.w.tooloffsetview.delete_tools()
         self.add_status(f"Deleted tool {tools[0]}")
@@ -1672,6 +1634,7 @@ class HandlerClass:
                 self.add_status("Select only 1 tool to load", ERROR)
             elif tool:
                 ACTION.CALL_MDI_WAIT(f'M61 Q{tool[0]} G43', mode_return=True)
+                self.update_tool_info(tool[0])
                 self.add_status(f"Tool {tool[0]} loaded")
             else:
                 self.add_status("No tool selected", WARNING)
@@ -1681,13 +1644,14 @@ class HandlerClass:
                 self.add_status('No tool selected in the database', WARNING)
                 return
             ACTION.CALL_MDI_WAIT(f'M61 Q{tool} G43', mode_return=True)
+            self.update_tool_info(tool)
             self.add_status(f"Tool {tool} loaded")
 
     def btn_unload_tool_pressed(self):
         ACTION.CALL_MDI_WAIT(f'M61 Q{0} G43', mode_return=True)
 
-    def show_db_help_page(self):
-        self.setup_utils.show_help_page(self.db_helpfile)
+    def show_db_help(self):
+        self.setup_utils.show_help(self.db_helpfile)
 
     # STATUS tab
     def btn_clear_status_clicked(self):
@@ -1738,12 +1702,6 @@ class HandlerClass:
         self.w.btn_ref_camera.setEnabled(state)
         self.w.camera_offset.setVisible(state)
 
-    def edit_gcode_changed(self, state):
-        if state:
-            self.w.gcode_viewer.editMode()
-        else:
-            self.w.gcode_viewer.readOnlyMode()
-
     def chk_run_from_line_changed(self, state):
         if not state:
             self.w.btn_cycle_start.setText('  CYCLE START')
@@ -1771,12 +1729,32 @@ class HandlerClass:
         self.w.lineEdit_sensor_height.setReadOnly(not self.w.chk_auto_toolsensor.isChecked())
         self.w.lineEdit_gauge_height.setReadOnly(not self.w.chk_manual_toolsensor.isChecked())
 
+    def auto_touchoff_changed(self, state):
+        v = 1 if state else 0
+        s = f'#<_auto_touchoff> = {v}'
+        ACTION.CALL_MDI(s)
+
+    def input_changed(self, val):
+        if val == 'sensor_height':
+            sh = self.w.lineEdit_sensor_height.text()
+            self.probe.set_ts_height(sh)
+        obj = self.w[f'lineEdit_{val}']
+        ACTION.CALL_MDI(f"#<_{val}> = {obj.text()}")
+        obj.clearFocus()
+
     def status_duration_changed(self, value):
         self.status_timeout = int(value * 1000)
 
     #####################
     # GENERAL FUNCTIONS #
     #####################
+    def show_about(self):
+        fname = os.path.join(HELP, 'about.html')
+        self.setup_utils.show_help(fname)
+
+    def show_probe_help(self, fname):
+        self.setup_utils.show_help(fname)
+
     def tool_data_changed(self, new, old, roles):
         row = new.row()
         col = new.column()
@@ -1819,6 +1797,24 @@ class HandlerClass:
         else:
            pass
 
+    def update_tool_info(self, tool):
+        data = self.tool_db.get_tool_data(tool)
+        if data is None:
+            self.add_status("Failed to retrieve data from database", ERROR)
+            return
+        maxz = data['length']
+        rtime = data['time']
+        icon = data['icon']
+        if icon is None or icon == "undefined":
+            self.w.lbl_tool_image.setText("Image\nUndefined")
+        else:
+            icon_file = os.path.join(PATH.CONFIGPATH, 'tool_icons/' + icon)
+            self.w.lbl_tool_image.setPixmap(QPixmap(icon_file))
+        text = "---" if maxz is None else str(maxz)
+        self.w.lineEdit_max_depth.setText(text)
+        self.pgm_start_time = rtime
+        self.w.lineEdit_acc_time.setText(f'{rtime:.1f}')
+
     def get_checked_tools(self):
         checked = self.w.tooloffsetview.get_checked_list()
         return checked
@@ -1838,30 +1834,13 @@ class HandlerClass:
         power = int(self.w.lineEdit_max_power.text())
         if power <= 0:
             self.w.lineEdit_max_power.setText(str(self.max_spindle_power))
-            self.add_status("Max spindle power must be >0 - discarding change", WARNING)
+            self.add_status("Max spindle power must be > 0 - discarding change", WARNING)
         else:
             self.max_spindle_power = power
         self.w.lineEdit_max_power.clearFocus()
 
-    def max_volts_edited(self):
-        volts = int(self.w.lineEdit_max_volts.text())
-        if volts <= 0:
-            self.w.lineEdit_max_volts.setText(str(self.max_spindle_volts))
-            self.add_status("Max spindle volts must be >0 - discarding change", WARNING)
-        else:
-            self.max_spindle_volts = volts
-        self.w.lineEdit_max_volts.clearFocus()
-
-    def max_amps_edited(self):
-        amps = int(self.w.lineEdit_max_amps.text())
-        if amps <= 0:
-            self.w.lineEdit_max_amps.setText(str(self.max_spindle_amps))
-            self.add_status("Max spindle amps must be >0 - discarding change.", WARNING)
-        else:
-            self.max_spindle_amps = amps
-        self.w.lineEdit_max_amps.clearFocus()
-
     def show_selected_axis(self, obj):
+        if not STATUS.is_man_mode() or not STATUS.machine_is_on(): return
         if self.w.chk_use_mpg.isChecked():
             self.w.jog_xy.set_highlight('X', bool(self.h['axis-select-x'] is True))
             self.w.jog_xy.set_highlight('Y', bool(self.h['axis-select-y'] is True))
@@ -1918,13 +1897,16 @@ class HandlerClass:
         ACTION.DO_JOG(axis, direction)
 
     def add_status(self, message, level=DEFAULT, noLog=False):
+        opt = 'TIME'
         if level == WARNING:
+            opt += ',WARNING'
             self.w.statusbar.setStyleSheet(f"color: {WARNING_COLOR};")
             message = 'WARNING: ' + message
             self.w.statusbar.showMessage(message, self.status_timeout)
             self.stat_warnings += 1
             self.w.lbl_stat_warnings.setText(f'{self.stat_warnings}')
         elif level == ERROR:
+            opt += ',ERROR'
             self.w.statusbar.setStyleSheet(f"color: {ERROR_COLOR};")
             message = 'ERROR: ' + message
             self.w.statusbar.showMessage(message, self.status_timeout)
@@ -1934,7 +1916,10 @@ class HandlerClass:
             self.w.statusbar.showMessage(message, self.status_timeout)
             self.w.statusbar.setStyleSheet(self.statusbar_style)
         if not message == "" and noLog is False:
-            STATUS.emit('update-machine-log', message, 'TIME')
+            STATUS.emit('update-machine-log', message, opt)
+
+    def print_status(self, msg):
+        print(msg)
 
     def statusbar_changed(self, message):
         if message == "":
@@ -1945,11 +1930,14 @@ class HandlerClass:
         if self.zlevel is not None:
             self.w.btn_enable_comp.setEnabled(not state)
         self.w.btn_goto_sensor.setEnabled(not state)
+        self.w.btn_goto_zero.setEnabled(not state)
+        self.w.btn_goto_home.setEnabled(not state)
+        self.w.btn_touchoff.setEnabled(not state)
+        self.w.btn_left.setEnabled(not state)
+        self.w.btn_right.setEnabled(not state)
         self.w.groupBox_jog_pads.setEnabled(not state)
         self.w.btn_cycle_start.setEnabled(state)
         self.w.lineEdit_spindle_raise.setReadOnly(state)
-        if self.w.btn_show_macros.isChecked():
-            self.show_macros_clicked(not state)
         if state:
             self.w.btn_main.setChecked(True)
             self.w.main_tab_widget.setCurrentIndex(TAB_MAIN)
@@ -1957,10 +1945,14 @@ class HandlerClass:
             self.w.btn_edit_gcode.setChecked(False)
             self.w.gcode_viewer.readOnlyMode()
             self.w.stackedWidget_gcode.setCurrentIndex(0)
+            if self.views_open:
+                self.toggle_views()
+            if self.macros_open:
+                self.toggle_macros()
         else:
             i = 1 if STATUS.is_mdi_mode() else 0
             self.w.stackedWidget_gcode.setCurrentIndex(i)
-            self.w.cmb_program_history.setEnabled(True)
+            self.w.cmb_program_history.setEnabled(i == 0)
 
     def enable_onoff(self, state):
         text = "ON" if state else "OFF"
@@ -1990,10 +1982,22 @@ class HandlerClass:
         if self.h['runtime-start'] is True:
             self.h['runtime-start'] = False
             self.add_status(f"Run timer stopped at {self.w.lineEdit_runtime.text()}")
-            if self.current_tool > 0:
+            tool = int(self.w.lineEdit_tool_in_spindle.text())
+            if tool > 0:
                 tis = float(self.w.lineEdit_acc_time.text())
-                if self.tool_db.update_tool_time(self.current_tool, tis) is None:
-                    self.add_satus(f'Update tool {self.current_tool} time in spindle error', WARNING)
+                if self.tool_db.update_tool_time(tool, tis) is None:
+                    self.add_status(f'Update tool {tool} time in spindle error', WARNING)
+
+    def get_status(self):
+        status = {
+            "state": self.w.lbl_program_state.text(),
+            "program": self.current_loaded_program,
+            "progress": self.w.progressBar.value(),
+            "feed": self.w.lbl_feedrate.text(),
+            "rpm": self.h.hal.get_value('spindle.0.speed-out'),
+            "tool": int(self.w.lineEdit_tool_in_spindle.text()),
+            "runtime": self.w.lineEdit_runtime.text()}
+        return status
 
     #####################
     # KEY BINDING CALLS #
@@ -2053,8 +2057,8 @@ class HandlerClass:
 
     def on_keycall_F4(self,event,state,shift,cntrl):
         if state:
-            mess = {'NAME':'CALCULATOR', 'TITLE':'Calculator', 'ID':'_calculator_'}
-            ACTION.CALL_DIALOG(mess)
+            mess = {'NAME':self.dialog_code, 'TITLE':'Calculator', 'ID':'_calculator_'}
+            STATUS.emit('dialog-request', mess)
 
     def on_keycall_F12(self,event,state,shift,cntrl):
         if state:

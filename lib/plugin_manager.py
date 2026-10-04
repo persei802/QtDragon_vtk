@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2023 Jim Sloot (persei802@gmail.com)
+# Copyright (c) 2026 Jim Sloot (persei802@gmail.com)
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,13 +14,14 @@ import sys
 import os
 import re
 import importlib
-import xml.etree.ElementTree as ET
 
-from PyQt5.QtGui  import QFont
-from PyQt5.QtCore import QObject, Qt, QUrl
-from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QTabWidget, QPlainTextEdit
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtWebEngineWidgets import QWebEnginePage
+from qtpy import uic
+from qtpy.QtGui  import QFont
+from qtpy.QtCore import QObject, Qt, QUrl, QSettings
+from qtpy.QtWidgets import (QWidget, QDialog, QDialogButtonBox, QVBoxLayout, QTabWidget, 
+                            QPlainTextEdit, QListWidgetItem)
+from qtpy.QtWebEngineWidgets import QWebEngineView
+from qtpy.QtWebEngineWidgets import QWebEnginePage
 
 from qtvcp.core import Info, Path
 from qtvcp.lib.qt_pdf import PDFViewer
@@ -44,66 +45,156 @@ class WebPage(QWebEnginePage):
         return super().acceptNavigationRequest(url, navtype, mainframe)
 
 
-class ShowHelp(QObject):
-    def __init__(self, dialog):
+# utilities that have a Help page, use this to display the page
+class ShowHelp(QDialog):
+    def __init__(self):
         super(ShowHelp, self).__init__()
-        layout = QVBoxLayout(dialog)
-        dialog.setWindowTitle('Utility Help')
-        dialog.setWindowFlags(Qt.WindowStaysOnTopHint)
+        layout = QVBoxLayout()
         self.webview = QWebEngineView()
+        self.webpage = QWebEnginePage()
+        self.webview.setPage(self.webpage)
+        self.setWindowTitle('QtDragon Help')
+        self.setWindowFlags(Qt.WindowStaysOnTopHint)
         bbox = QDialogButtonBox()
         bbox.addButton(QDialogButtonBox.Ok)
         layout.addWidget(self.webview)
         layout.addWidget(bbox)
+        self.setLayout(layout)
+        self.hide()
 
-        bbox.accepted.connect(dialog.accept)
+        bbox.accepted.connect(self.accept)
 
-    def load_url(self, url):
-        self.webview.load(url)
+    def load_page(self, fname):
+        url = QUrl("file:///" + fname)
+        self.webpage.load(url)
+        self.show()
+
+
+class Plugin_Manager(QWidget):
+    def __init__(self, parent=None):
+        super(Plugin_Manager, self).__init__()
+        self.parent = parent
+        self.w = parent.w
+        self.settings = QSettings('qtdragon', 'plugins')
+        # Load the widgets UI file:
+        self.filename = os.path.join(HERE, 'plugin_manager.ui')
+        try:
+            self.instance = uic.loadUi(self.filename, self)
+        except AttributeError as e:
+            self.parent.add_status(e, WARNING)
+        self.listWidget_plugins.itemPressed.connect(self.itemPressed)
+
+    def add_items(self, items):
+        for item in items.keys():
+            new_item = QListWidgetItem(item)
+            new_item.setFlags(new_item.flags() | Qt.ItemIsUserCheckable)
+            enabled = self.settings.value(f'plugins/{item}', False, bool)
+            state = Qt.Checked if enabled else Qt.Unchecked
+            new_item.setCheckState(state)
+            data = {'name': None,
+                    'version': None,
+                    'status': 'Not Installed',
+                    'description': None}
+            new_item.setData(Qt.UserRole, data)
+            new_item.setText(item)
+            self.listWidget_plugins.addItem(new_item)
+
+    def add_info(self, plugin, info):
+        items = self.listWidget_plugins.findItems(plugin, Qt.MatchExactly)
+        if items:
+            item = items[0]
+            data = item.data(Qt.UserRole)
+            data['name'] = info['mod_name']
+            data['version'] = info['version']
+            data['description'] = info['description']
+            item.setData(Qt.UserRole, data)
+
+    def get_status(self, plugin):
+        return self.settings.value(f'plugins/{plugin}', False, bool)
+
+    def change_status(self, plugin, status):
+        items = self.listWidget_plugins.findItems(plugin, Qt.MatchExactly)
+        if items:
+            item = items[0]
+            data = item.data(Qt.UserRole)
+            data['status'] = status
+            item.setData(Qt.UserRole, data)
+
+    def itemPressed(self, item):
+        data = item.data(Qt.UserRole)
+        self.lbl_name.setText(data['name'])
+        self.lbl_version.setText(data['version'])
+        self.lbl_status.setText(data['status'])
+        self.lbl_description.setText(data['description'])
+
+    def closing_cleanup__(self):
+        for i in range(self.listWidget_plugins.count()):
+            item = self.listWidget_plugins.item(i)
+            self.settings.setValue(f'plugins/{item.text()}', item.checkState() == Qt.Checked)
+        self.settings.sync()
 
 class Setup_Utils():
     def __init__(self, parent):
         self.w = parent.w
         self.parent = parent
-        if self.parent is not None:
-            self.tool_db = self.parent.tool_db
         self.installed_modules = list()
-        self.zlevel = None
         self.doc_index = 0
         self.util_list = []
-        # setup XML parser
-        xml_filename = os.path.join(HERE, 'utils.xml')
-        self.tree = ET.parse(xml_filename)
-        self.root = self.tree.getroot()
-        # setup help file viewer
-        self.dialog = QDialog()
-        self.help_page = ShowHelp(self.dialog)
-        self.dialog.hide()
+        self.help = ShowHelp()
+        # install plugin manager to handler UI
+        self.plugins = Plugin_Manager(self.parent)
+        self.w.stackedWidget_utils.addWidget(self.plugins)
+        self.util_list.append('PLUGIN MANAGER')
+        self.installed_modules.append(self.plugins)
+
+        plugins = self.get_plugin_list()
+        self.init_utils(plugins)
 
     def closing_cleanup__(self):
         for mod in self.installed_modules:
             if 'closing_cleanup__' in dir(mod):
                 mod.closing_cleanup__()
 
-    def init_utils(self):
-        # install optional utilities
-        utils = self.root.findall("util")
-        for util in utils:
-            mod_name = util.find("module").text
-            class_name = util.find("class").text 
-            item_text = util.find("name").text
+    def get_plugin_list(self):
+        # get list of all python files in plugins folder
+        path = os.path.join(PATH.CONFIGPATH, "plugins")
+        modules = []
+        pfiles = os.listdir(path)
+        pfiles.sort()
+        for item in pfiles:
+            if item.endswith(".py"):
+                name, ext = os.path.splitext(item)
+                modules.append(name)
+        # sort out any files that don't have PLUGIN_INFO
+        plugins = {}
+        for item in modules:
+            module = importlib.import_module(f"plugins.{item}")
+            try:
+                plugins[item] = module.PLUGIN_INFO
+            except:
+                pass
+        return plugins
+
+    def init_utils(self, plugins):
+        # populate module names in listWidget
+        self.plugins.add_items(plugins)
+        for plugin in plugins.keys():
+            status = self.plugins.get_status(plugin)
+            if status is False: continue
+            module = importlib.import_module(f"plugins.{plugin}")
+            info = plugins[plugin]
+            self.plugins.add_info(plugin, info)
+            mod_name = info['mod_name']
+            class_name = info['class_name']
+            item_text = info['item_text']
             self.install_module(mod_name, class_name, item_text)
-        # check if Z level compensation was installed
-        if self.zlevel is not None:
-            self.parent.zlevel = self.zlevel
-        # install permanent utilities
-        self.install_rapid_rotary()
+            self.plugins.change_status(plugin, 'Installed')
+       # install permanent utilities
         self.install_document_viewer()
-        self.install_gcodes()
         self.show_defaults()
 
     def install_module(self, mod_name, class_name, item):
-        mod_path = 'utils.' + mod_name
+        mod_path = 'plugins.' + mod_name
         try:
             module = importlib.import_module(mod_path)
             cls = getattr(module, class_name)
@@ -120,25 +211,11 @@ class Setup_Utils():
             return
         self.w.stackedWidget_utils.addWidget(self[mod_name])
         self.util_list.append(item)
-        self[mod_name]._hal_init()
+        # some plugins may not have a _hal_init method
+        try:
+            self[mod_name]._hal_init()
+        except: pass
         LOG.debug(f"Installed utility: {class_name}")
-
-    def install_gcodes(self):
-        from utils.gcodes import GCodes
-        self.gcodes = GCodes()
-        self.w.stackedWidget_utils.addWidget(self.gcodes)
-        self.util_list.append('GCODES')
-        self.gcodes.setup_list()
-        LOG.debug("Installed utility: GCodes")
-
-    def install_rapid_rotary(self):
-        if 'A' in INFO.AVAILABLE_AXES:
-            from utils.rapid_rotary import Rapid_Rotary
-            self.rapid_rotary = Rapid_Rotary(self)
-            self.w.stackedWidget_utils.addWidget(self.rapid_rotary)
-            self.util_list.append('RAPID ROTARY')
-            self.rapid_rotary._hal_init()
-            LOG.debug("Installed utility: Rapid Rotary")
 
     def install_document_viewer(self):
         self.doc_viewer = QTabWidget()
@@ -179,6 +256,7 @@ class Setup_Utils():
         except Exception as e:
             self.parent.add_status(f"Could not find default PDF file - {e}", ERROR)
 
+# Calls from external modules
     def show_html(self, fname):
         url = QUrl("file:///" + fname)
         self.web_page_setup.load(url)
@@ -222,13 +300,11 @@ class Setup_Utils():
         self.gcode_properties.setPlainText(text)
         self.doc_viewer.setCurrentIndex(3)
 
-    def show_help_page(self, page):
-        url = QUrl("file:///" + page)
-        self.help_page.load_url(url)
-        self.dialog.show()
-
     def get_util_list(self):
         return self.util_list
+
+    def show_help(self, fname):
+        self.help.load_page(fname)
 
     # pass status message from utility to handler
     def add_status(self, msg, level=None):
@@ -240,10 +316,3 @@ class Setup_Utils():
 
     def __setitem__(self, item, value):
         return setattr(self, item, value)
-
-if __name__ == "__main__":
-    app = PyqQt5.QtWidgets.QApplication(sys.argv)
-    w = Setup_Utils(None, None)
-    w.init_utils()
-    sys.exit( app.exec_() )
-
