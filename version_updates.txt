@@ -93,9 +93,50 @@ Sep. 10/25 v 2.1.9
     - complete overhaul of tool database function
     - added statusbar timeout option in SETTINGS page
     
-Dec. 24/29 v 2.2.0
+Dec. 24/25 v 2.2.0
     - fixed issue with get_tool_data, return entire dictionary instead of single item
     - added indicators to mode and program buttons to indicate actual machine state
     - no need to disable spindle pause button in AUTO mode
     - spindle override adjuster should not adjust spindle gauge threshold level
+    
+Mar. 1/26 v 2.2.1
+    - added material specific data for tool database
+    - added tool length offset measurement to basic probe
+    
+Mar. 13/26 v 2.2.2
+    - continuous update of tool time in spindle while a program is running
+
+Jun. 1/26 v 2.2.3
+    - eliminated previews for facing and hole enlarge utilities
+    - gcode history combobox updated only by file_loaded status message
+    - deleted gcodeeditor class and replaced with gcodeeditor qt widget in ui file
+    - improved code for file manager widgets
+
+Jul. 17/26 v 2.2.4
+    - added web server for remote monitoring
+    - do not add duplicate entries to program history combobox
+    
+Jul. 29/26 v 2.2.5
+    - converted setup_utils to plugin_manager, XML file no longer required
+    - added PLUGIN_INFO metadata to all plugin modules
+    - all plugin input parameter data now saved to a settings file
+    - added indicator to ZCOMP ENABLE button to indicate state of comp_enable HAL pin
+    - prepared all modules for migration to Qt6
+
+Aug. 14/26 v 2.2.6
+    - unified all basic probe help files to a single file
+    - unified all about help files to a single file
+    - plugin manager handles showing help files for all other modules
+    - basic probe now uses zmq to communicate with probe_subprog
+    - code improvements to probe_routines
+    
+Aug. 20/26 v 2.2.7
+    - added SETTING to enable/disable auto tool touchoff during M6 remap
+    - added M6 remap code to python folder
+
+Oct. 4/26 v 2.2.8
+    - moved QSettings file to CONFIG directory
+    - removed adding Nxxx style line numbers from all plugin utilities that created gcode
+    - added sliding macro button widget to preview page - eliminates Show Macros button
+    - fixed zlevel program save error
     
